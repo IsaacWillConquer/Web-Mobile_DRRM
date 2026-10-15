@@ -10,6 +10,11 @@ node_modules/
 google-services.json
 GoogleService-Info.plist
 
+# firebase admin service account keys — never commit
+*serviceAccount*.json
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+
 # builds
 dist/
 build/

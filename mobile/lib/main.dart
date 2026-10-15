@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'config/app_config.dart';
 import 'core/auth_service.dart';
 import 'firebase_options.dart';
-import 'screens/home_screen.dart';
+import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 
 Future<void> main() async {
@@ -40,7 +40,7 @@ class AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return snapshot.data == null ? const LoginScreen() : const HomeScreen();
+        return snapshot.data == null ? const LoginScreen() : const HomeShell();
       },
     );
   }

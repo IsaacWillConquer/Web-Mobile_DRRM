@@ -14,10 +14,12 @@ IT 305 · Bulacan State University · **Submit: Nov 2, 2026**
 - **Web:** React + Vite + Tailwind → admin/dispatch + responder + DMO
 - **Mobile:** Flutter → resident/reporter
 - **Images:** Cloudinary (free, unsigned upload) — **up to 3 photos** per report
-- **Maps:** OpenStreetMap (Leaflet web / flutter_map mobile)
+- **Maps:** OpenStreetMap — **MapLibre** (mobile, OpenFreeMap vector styles) / **Leaflet** (web)
 - **Notifications:** FCM
 - **Contact/victim details:** user **profile** (`users`) **+** per-report staff-only `reportContacts/{reportId}`
   (resident can report for self or someone else)
+- **Mobile auth:** **phone + password** (`+63`), synthetic `63…@drrm.local` Auth identifier; full profile
+  captured at signup. **Web auth:** email + password (admin/staff).
 - **Offline:** **offline-first** mobile — queued reports + photos, offline **map tiles**, offline duplicate
   detection, manual address entry, offline banner + pending-sync badge
 - **SMS:** **outbound fallback only** — native composer prefilled to the LDRRMO hotline with
@@ -126,10 +128,17 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 ### P4b — Offline-first + SMS fallback (Oct 22–26) — D, E
 - [ ] Enable Firestore persistence; offline report queue + "pending sync" badge
 - [ ] Local photo staging → queued upload on reconnect
-- [ ] Offline map tiles (`flutter_map_tile_caching`)
+- [ ] Offline map tiles (MapLibre offline regions, mobile)
 - [ ] Offline duplicate detection (cached), reconcile on reconnect
 - [ ] Manual address entry when offline
 - [ ] "Send via SMS" fallback → native composer (hotline + coords + short desc)
+
+### P4c — Typhoon alert card (mobile)
+- [x] Swappable `TyphoonService` (Firestore `bulletins`) + models + cache
+- [x] Province GeoJSON (geoBoundaries ADM2, simplified) + point-in-polygon + aliases + tests
+- [x] Alert card UI (signal ramp, pulsing ring, collapse) + minimal map/home screen
+- [x] Session-only dismiss (returns on restart or new bulletin id)
+- [ ] Deploy `bulletins` rules + seed via `scripts/seed_bulletins.js`
 
 ### P5 — Clustering + notifications + security (Oct 24–27) — E
 - [ ] Nearby/duplicate clustering (geohash)
@@ -175,3 +184,7 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-15 | P0 | Firebase project `drrm-app` created (Auth + Firestore); web `.env` filled; mobile Android app registered as `com.drrm.mobile` (renamed from `com.drrm.drrm_mobile`), `firebase_options.dart` + `google-services.json` in place; Kotlin bumped to 2.3.0 (`compilerOptions` jvmTarget DSL); app runs on emulator |
 | 2026-10-15 | P0 | Web is **staff-only** (dispatcher/rescueTeam/dmo) — residents use mobile only |
 | 2026-10-15 | P5 | Hardened `firestore.rules` (uid-spoof guard on `logs`, responder-gated notifications/clusters/teams, reports field validation, resident-only self-create) + composite indexes added; rules validated via Firestore emulator |
+| 2026-10-15 | P4 | Mobile map migrated `flutter_map` → **MapLibre** (`maplibre_gl`, OpenFreeMap `liberty`); Kotlin/JDK 21 confirmed; Android + iOS location perms; APK builds |
+| 2026-10-15 | P4c | Typhoon alert card: `TyphoonService`/`TyphoonSource` (Firestore `bulletins`), province GeoJSON lookup + aliases + signal resolver (12 tests), card UI + map/home screen + session dismiss; `bulletins` rules added (read-only) |
+| 2026-10-15 | P1 | Mobile auth → **phone + password** (`+63` normalization, synthetic Auth email), redesigned login + 3-step register wizard (profile: name/suffix/birthdate/disability/address/household); web stays email; phone/logic tests |
+| 2026-10-15 | P4 | Map-first home shell (Map/Profile tabs via IndexedStack, custom bottom bar + raised Report button), flat `positron` map (tilt/rotate disabled), working recenter (`resolvePosition` w/ timeLimit + last-known fallback), My Reports index bug fixed (Dart sort), card restyled to spec |

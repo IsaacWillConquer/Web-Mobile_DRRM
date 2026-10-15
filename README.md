@@ -63,3 +63,11 @@ No server. No Postgres. Images via Cloudinary (free). Maps via OpenStreetMap.
 
 `FinalProject_AWA/` (our earlier Firebase scaffold) and `agap.ai/` (the open-source app whose
 flow we copy) are kept as reference only — not modified, not imported.
+
+## Attribution
+
+- **Province boundaries:** [geoBoundaries](https://www.geoboundaries.org/) Philippines ADM2
+  (Provinces), licensed **CC BY 3.0 IGO**, sourced from NAMRIA / PSA / OCHA Philippines via HDX.
+  Bundled at `mobile/assets/geo/ph_provinces.geojson` and simplified for size.
+- **Basemap:** © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, vector
+  tiles/styles served by [OpenFreeMap](https://openfreemap.org/) (OpenMapTiles schema).

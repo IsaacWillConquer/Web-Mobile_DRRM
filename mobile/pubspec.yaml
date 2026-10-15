@@ -41,8 +41,8 @@ dependencies:
   geolocator: ^14.0.2
   image_picker: ^1.2.2
   url_launcher: ^6.3.2
-  flutter_map: ^8.3.2
-  latlong2: ^0.10.1
+  maplibre_gl: ^0.27.1
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
@@ -65,6 +65,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/geo/ph_provinces.geojson
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -4,6 +4,28 @@ class AppConfig {
   static const String appName = 'DRRM';
   static const String appTagline = 'Disaster Rescue Reporting & Monitoring';
 
+  static const String cloudinaryCloudName = 'wyjg9xop';
+  static const String cloudinaryUploadPreset = 'drrm-cloudinary';
+
+  static const String mapStyleUrl = 'https://tiles.openfreemap.org/styles/positron';
+
+  static const String ldrrmoHotline = '+639000000000';
+
+  static const List<String> priorities = ['low', 'medium', 'high'];
+
+  static const List<String> disabilityOptions = [
+    'None',
+    'Visual',
+    'Hearing',
+    'Speech',
+    'Physical / Mobility',
+    'Intellectual',
+    'Learning',
+    'Psychosocial',
+    'Multiple',
+    'Other',
+  ];
+
   static const List<String> disasterTypes = [
     'Flood',
     'Fire',

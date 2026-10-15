@@ -1,0 +1,12 @@
+{
+  "name": "drrm-scripts",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Admin helper scripts for FinalProject_DRRM",
+  "scripts": {
+    "seed:bulletins": "node seed_bulletins.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}

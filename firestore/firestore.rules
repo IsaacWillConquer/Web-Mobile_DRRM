@@ -115,6 +115,13 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // PAGASA typhoon bulletins: read-only feed for signed-in users.
+    // Writes happen only via the Admin SDK script (scripts/seed_bulletins.js) or the console.
+    match /bulletins/{bulletinId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

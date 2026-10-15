@@ -1,0 +1,46 @@
+{
+  "bulletins": [
+    {
+      "id": "pagasa-tc-kiko-2026-10-15-05",
+      "typhoonName": "Kiko",
+      "category": "Typhoon",
+      "source": "PAGASA",
+      "sourceUrl": "https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
+      "postedAt": "2026-10-15T05:00:00+08:00",
+      "active": true,
+      "signals": [
+        {
+          "level": 1,
+          "areas": ["Metro Manila", "Rizal", "Bulacan", "Cavite", "Laguna"]
+        },
+        {
+          "level": 2,
+          "areas": ["Aurora", "Nueva Ecija", "Pampanga", "Quezon"]
+        },
+        {
+          "level": 3,
+          "areas": ["Isabela", "Cagayan", "Quirino"]
+        }
+      ]
+    },
+    {
+      "id": "pagasa-tc-kiko-2026-10-14-23",
+      "typhoonName": "Kiko",
+      "category": "Severe Tropical Storm",
+      "source": "PAGASA",
+      "sourceUrl": "https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
+      "postedAt": "2026-10-14T23:00:00+08:00",
+      "active": false,
+      "signals": [
+        {
+          "level": 1,
+          "areas": ["Cebu", "Bohol", "Negros Oriental"]
+        },
+        {
+          "level": 2,
+          "areas": ["Leyte", "Samar", "Eastern Samar"]
+        }
+      ]
+    }
+  ]
+}
