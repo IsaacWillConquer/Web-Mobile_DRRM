@@ -1,4 +1,4 @@
-package com.drrm.drrm_mobile
+package com.drrm.mobile
 
 import io.flutter.embedding.android.FlutterActivity
 

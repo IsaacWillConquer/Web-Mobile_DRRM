@@ -15,6 +15,8 @@ export const ROLE_LABELS = {
   dmo: "Disaster Management Officer",
 };
 
+export const WEB_ROLES = [ROLES.dispatcher, ROLES.rescueTeam, ROLES.dmo];
+
 export const COLLECTIONS = {
   users: "users",
   reports: "reports",

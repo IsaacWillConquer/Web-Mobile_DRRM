@@ -15,9 +15,10 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'REPLACE_WITH_YOUR_ANDROID_API_KEY',
-    appId: 'REPLACE_WITH_YOUR_ANDROID_APP_ID',
-    messagingSenderId: 'REPLACE_WITH_YOUR_SENDER_ID',
-    projectId: 'REPLACE_WITH_YOUR_PROJECT_ID',
+    apiKey: 'AIzaSyBfpcl07v53SEZYUGuUX7e64JOegE56mhw',
+    appId: '1:1010321970173:android:1a9a3627737d085c2abf94',
+    messagingSenderId: '1010321970173',
+    projectId: 'drrm-app',
+    storageBucket: 'drrm-app.firebasestorage.app',
   );
 }

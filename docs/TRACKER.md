@@ -172,3 +172,5 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-14 | P1 | Web: firebase init, AuthProvider, authService, role guards, login/register/dashboard, audit `logAction`. Mobile: authService, login/register/home, AuthGate. Web lint 0, build OK; `flutter analyze` clean |
 | 2026-10-14 | docs | Added `docs/SETUP.md` (Firebase + Cloudinary one-time setup) |
 | 2026-10-15 | P0.5 | Pre-split contracts: `docs/CONTRIBUTING.md`, `core/services/*` data layer, `AppShell` + role page skeletons, routes split per role |
+| 2026-10-15 | P0 | Firebase project `drrm-app` created (Auth + Firestore); web `.env` filled; mobile Android app registered as `com.drrm.mobile` (renamed from `com.drrm.drrm_mobile`), `firebase_options.dart` + `google-services.json` in place; Kotlin bumped to 2.3.0 (`compilerOptions` jvmTarget DSL); app runs on emulator |
+| 2026-10-15 | P0 | Web is **staff-only** (dispatcher/rescueTeam/dmo) — residents use mobile only |

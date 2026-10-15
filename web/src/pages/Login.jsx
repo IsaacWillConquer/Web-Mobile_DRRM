@@ -1,8 +1,13 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { loginUser } from "../core/auth/authService";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getUserProfile, loginUser, logoutUser } from "../core/auth/authService";
+import { useAuth } from "../core/auth/authContext";
 import { logAction } from "../core/audit/logAction";
-import { APP_NAME, APP_TAGLINE } from "../config/appConfig";
+import { APP_NAME, APP_TAGLINE, WEB_ROLES } from "../config/appConfig";
+
+const STAFF_ONLY =
+  "This portal is for dispatchers, rescue teams, and disaster management officers. " +
+  "Residents, please use the mobile app.";
 
 function friendlyError(err) {
   const code = err?.code ?? "";
@@ -19,11 +24,30 @@ function friendlyError(err) {
 }
 
 export default function Login() {
+  const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (loading || !user) return;
+    let active = true;
+    (async () => {
+      const profile = await getUserProfile(user.uid);
+      if (!active) return;
+      if (profile && WEB_ROLES.includes(profile.role)) {
+        navigate("/dashboard", { replace: true });
+      } else {
+        await logoutUser();
+        setError(STAFF_ONLY);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user, loading, navigate]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -31,6 +55,15 @@ export default function Login() {
     setBusy(true);
     try {
       const credential = await loginUser({ email, password });
+      const profile = await getUserProfile(credential.user.uid);
+      if (!profile || !WEB_ROLES.includes(profile.role)) {
+        await logAction(credential.user.uid, "web_login_blocked", {
+          role: profile?.role ?? null,
+        });
+        await logoutUser();
+        setError(STAFF_ONLY);
+        return;
+      }
       await logAction(credential.user.uid, "auth_login");
       navigate("/dashboard", { replace: true });
     } catch (err) {
@@ -45,6 +78,9 @@ export default function Login() {
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-bold text-slate-900">{APP_NAME}</h1>
         <p className="mt-1 text-sm text-slate-500">{APP_TAGLINE}</p>
+        <p className="mt-2 text-xs font-medium uppercase tracking-wide text-blue-700">
+          Staff Portal
+        </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <label className="block">
@@ -84,11 +120,8 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="mt-4 text-center text-sm text-slate-500">
-          No account?{" "}
-          <Link to="/register" className="font-semibold text-blue-700">
-            Create one
-          </Link>
+        <p className="mt-4 text-center text-xs text-slate-400">
+          Accounts are issued by the administrator.
         </p>
       </div>
     </div>
