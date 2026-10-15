@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 const Color _kSelected = Color(0xFFE53935);
 const Color _kUnselected = Color(0xFF6B7280);
-const Color _kPill = Color(0xFFFEE2E2);
 
 class AppBottomBar extends StatelessWidget {
   const AppBottomBar({
@@ -81,28 +80,20 @@ class _NavItem extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Center(
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected ? _kPill : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(selected ? activeIcon : icon, size: 24, color: color),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: color,
-                  fontWeight: selected ? FontWeight.bold : FontWeight.w500,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(selected ? activeIcon : icon, size: 24, color: color),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: color,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

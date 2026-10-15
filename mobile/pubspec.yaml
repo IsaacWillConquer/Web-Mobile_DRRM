@@ -67,7 +67,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/geo/ph_provinces.geojson
+    - assets/geo/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

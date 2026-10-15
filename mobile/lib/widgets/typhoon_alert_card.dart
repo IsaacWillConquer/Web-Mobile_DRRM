@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_config.dart';
 import '../models/typhoon.dart';
 
 const Color _navy = Color(0xFF1F2937);
@@ -47,6 +48,17 @@ class TyphoonAlertCard extends StatefulWidget {
 
 class _TyphoonAlertCardState extends State<TyphoonAlertCard> {
   late bool _expanded = widget.initiallyExpanded;
+
+  void _showSafetyTips(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const _SafetyTips(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,9 +134,27 @@ class _TyphoonAlertCardState extends State<TyphoonAlertCard> {
                         ),
                         const SizedBox(height: 12),
                       ],
-                      _ToggleButton(
-                        expanded: _expanded,
-                        onPressed: () => setState(() => _expanded = !_expanded),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _OutlineButton(
+                              icon: _expanded
+                                  ? Icons.keyboard_arrow_up
+                                  : Icons.info_outline,
+                              label: _expanded ? 'Collapse' : 'View Details',
+                              onPressed: () =>
+                                  setState(() => _expanded = !_expanded),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _SolidButton(
+                              icon: Icons.health_and_safety_outlined,
+                              label: 'Safety Tips',
+                              onPressed: () => _showSafetyTips(context),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -260,19 +290,70 @@ class _CloseButton extends StatelessWidget {
   }
 }
 
-class _ToggleButton extends StatelessWidget {
-  const _ToggleButton({required this.expanded, required this.onPressed});
+class _OutlineButton extends StatelessWidget {
+  const _OutlineButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
 
-  final bool expanded;
+  final IconData icon;
+  final String label;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: double.infinity,
       height: 48,
       child: Material(
-        color: _lightGray,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: onPressed,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFD1D5DB)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 20, color: _navy),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: _navy,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SolidButton extends StatelessWidget {
+  const _SolidButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: Material(
+        color: _fallbackAccent,
         borderRadius: BorderRadius.circular(24),
         child: InkWell(
           borderRadius: BorderRadius.circular(24),
@@ -280,21 +361,87 @@ class _ToggleButton extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                expanded ? Icons.keyboard_arrow_up : Icons.info_outline,
-                size: 20,
-                color: _navy,
-              ),
+              Icon(icon, size: 20, color: Colors.white),
               const SizedBox(width: 8),
               Text(
-                expanded ? 'Collapse' : 'View Details',
+                label,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: _navy,
+                  color: Colors.white,
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SafetyTips extends StatelessWidget {
+  const _SafetyTips();
+
+  static const _tips = [
+    'Stay indoors, away from windows and loose objects.',
+    'Avoid floodwaters, downed power lines, and damaged structures.',
+    'Prepare a go-bag: water, food, medicines, flashlight, radio, IDs.',
+    'Follow official evacuation orders from your barangay / LGU.',
+    'Keep your phone charged and monitor PAGASA / LDRRMO updates.',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Typhoon Safety Tips',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: _navy,
+              ),
+            ),
+            const SizedBox(height: 16),
+            for (final tip in _tips)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.circle, size: 8, color: _fallbackAccent),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        tip,
+                        style: const TextStyle(fontSize: 14, color: _navy),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _pinkPill,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Emergency hotline: ${AppConfig.ldrrmoHotline}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: _darkRed,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

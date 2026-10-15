@@ -2,9 +2,11 @@
   "name": "drrm-scripts",
   "private": true,
   "version": "0.0.0",
-  "description": "Admin helper scripts for FinalProject_DRRM",
+  "description": "Admin + data fetcher scripts for FinalProject_DRRM",
   "scripts": {
-    "seed:bulletins": "node seed_bulletins.js"
+    "seed:bulletins": "node seed_bulletins.js",
+    "fetch:typhoon": "node fetch_typhoon.js",
+    "fetch:rain": "node fetch_rain.js"
   },
   "dependencies": {
     "firebase-admin": "^13.0.0"

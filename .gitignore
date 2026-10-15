@@ -5,6 +5,9 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# map provider key (mobile) — keep the example, never the real one
+mobile/lib/config/map_config.dart
 *.pem
 *.key
 google-services.json

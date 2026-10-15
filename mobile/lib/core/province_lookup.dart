@@ -9,6 +9,7 @@ const Map<String, String> _areaAliases = {
   'compostela valley': 'davao de oro',
   'maguindanao del norte': 'maguindanao',
   'maguindanao del sur': 'maguindanao',
+  'barmm': 'armm',
   'western samar': 'samar',
 };
 

@@ -14,7 +14,10 @@ IT 305 · Bulacan State University · **Submit: Nov 2, 2026**
 - **Web:** React + Vite + Tailwind → admin/dispatch + responder + DMO
 - **Mobile:** Flutter → resident/reporter
 - **Images:** Cloudinary (free, unsigned upload) — **up to 3 photos** per report
-- **Maps:** OpenStreetMap — **MapLibre** (mobile, OpenFreeMap vector styles) / **Leaflet** (web)
+- **Maps:** **MapTiler** vector styles (default `streets-v4`) on **MapLibre** (mobile), with
+  OpenFreeMap (Positron/Bright) as keyless fallbacks. Web: Leaflet. Key kept in gitignored `map_config.dart`.
+- **Hazard overlays:** Typhoons (JMA, Firestore), Storm Signals (PAGASA TCWS, admin-entered),
+  Rain Forecast (Open-Meteo). Hazards (flood/landslide) = UI-only stub (real data 486 MB–2.7 GB).
 - **Notifications:** FCM
 - **Contact/victim details:** user **profile** (`users`) **+** per-report staff-only `reportContacts/{reportId}`
   (resident can report for self or someone else)
@@ -188,3 +191,4 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-15 | P4c | Typhoon alert card: `TyphoonService`/`TyphoonSource` (Firestore `bulletins`), province GeoJSON lookup + aliases + signal resolver (12 tests), card UI + map/home screen + session dismiss; `bulletins` rules added (read-only) |
 | 2026-10-15 | P1 | Mobile auth → **phone + password** (`+63` normalization, synthetic Auth email), redesigned login + 3-step register wizard (profile: name/suffix/birthdate/disability/address/household); web stays email; phone/logic tests |
 | 2026-10-15 | P4 | Map-first home shell (Map/Profile tabs via IndexedStack, custom bottom bar + raised Report button), flat `positron` map (tilt/rotate disabled), working recenter (`resolvePosition` w/ timeLimit + last-known fallback), My Reports index bug fixed (Dart sort), card restyled to spec |
+| 2026-10-15 | P4c | Map Layers sheet (Hazards stub + Map-layers toggles), Storm Signals / Typhoons / Rain overlays (GeoJSON builders + MapLibre layers), active-layer pill, layers+recenter buttons; MapTiler styles (key gitignored); JMA + Open-Meteo fetchers + GitHub Actions cron; regions GeoJSON asset |

@@ -66,8 +66,15 @@ flow we copy) are kept as reference only — not modified, not imported.
 
 ## Attribution
 
-- **Province boundaries:** [geoBoundaries](https://www.geoboundaries.org/) Philippines ADM2
-  (Provinces), licensed **CC BY 3.0 IGO**, sourced from NAMRIA / PSA / OCHA Philippines via HDX.
-  Bundled at `mobile/assets/geo/ph_provinces.geojson` and simplified for size.
-- **Basemap:** © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, vector
-  tiles/styles served by [OpenFreeMap](https://openfreemap.org/) (OpenMapTiles schema).
+- **Province / region boundaries:** [geoBoundaries](https://www.geoboundaries.org/) Philippines
+  ADM1 (regions) + ADM2 (provinces), licensed **CC BY 3.0 IGO**, sourced from NAMRIA / PSA /
+  OCHA Philippines via HDX. Bundled under `mobile/assets/geo/` and simplified for size.
+- **Basemap:** © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors. Default
+  style served by [MapTiler](https://www.maptiler.com/) (key required); OpenFreeMap
+  ([Positron/Bright](https://openfreemap.org/)) is available as a keyless fallback.
+- **Typhoon track / forecast:** [JMA](https://www.jma.go.jp/bosai/typhoon/) (RSMC Tokyo).
+- **Disaster alerts (reference):** [GDACS](https://www.gdacs.org/) (UN/EC).
+- **Rainfall forecast:** Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0,
+  non-commercial). **Not** PAGASA data.
+- **PH wind signals (TCWS):** entered from [PAGASA](https://www.pagasa.dost.gov.ph/) bulletins by
+  an admin; no public API.

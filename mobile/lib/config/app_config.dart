@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'map_styles.dart';
+
 class AppConfig {
   static const String appName = 'DRRM';
   static const String appTagline = 'Disaster Rescue Reporting & Monitoring';
@@ -7,7 +9,8 @@ class AppConfig {
   static const String cloudinaryCloudName = 'wyjg9xop';
   static const String cloudinaryUploadPreset = 'drrm-cloudinary';
 
-  static const String mapStyleUrl = 'https://tiles.openfreemap.org/styles/positron';
+  static String get mapStyleUrl => MapStyles.defaultStyle.url;
+  static const String rainForecastSource = 'Open-Meteo';
 
   static const String ldrrmoHotline = '+639000000000';
 
