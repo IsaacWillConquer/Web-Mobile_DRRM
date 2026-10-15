@@ -35,6 +35,8 @@ No server. No Postgres. Images via Cloudinary (free). Maps via OpenStreetMap.
 ## Documentation
 
 - **Start here:** [`docs/TRACKER.md`](docs/TRACKER.md) — decisions, team split, phases, progress.
+- **Contributing:** [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — branching, PRs, ownership, shared files.
+- **Setup:** [`docs/SETUP.md`](docs/SETUP.md) — Firebase + Cloudinary one-time config.
 
 ## Core flow (copied from agap.ai)
 

@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Login from "../pages/Login";
 import Register from "../pages/Register";
 import Dashboard from "../pages/Dashboard";
+import DispatchPage from "../pages/dispatch/DispatchPage";
+import ResponderPage from "../pages/responder/ResponderPage";
+import DmoPage from "../pages/dmo/DmoPage";
 import ProtectedRoute from "../core/guards/ProtectedRoute";
 import { useAuth } from "../core/auth/authContext";
 import { ROLES } from "../config/appConfig";
@@ -27,7 +30,7 @@ export default function AppRoutes() {
         path="/dispatch"
         element={
           <ProtectedRoute roles={[ROLES.dispatcher, ROLES.dmo]}>
-            <Dashboard />
+            <DispatchPage />
           </ProtectedRoute>
         }
       />
@@ -36,7 +39,16 @@ export default function AppRoutes() {
         path="/responder"
         element={
           <ProtectedRoute roles={[ROLES.rescueTeam, ROLES.dispatcher]}>
-            <Dashboard />
+            <ResponderPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/dmo"
+        element={
+          <ProtectedRoute roles={[ROLES.dmo]}>
+            <DmoPage />
           </ProtectedRoute>
         }
       />

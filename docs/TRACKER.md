@@ -96,6 +96,12 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 - [x] Scaffold `mobile/` (Flutter + Firebase)
 - [x] `firestore/firestore.rules` + indexes; data model set (+ `firebase.json`, `.firebaserc`)
 
+### P0.5 — Contracts + team onboarding (Oct 15–16) — A/E
+- [x] `docs/CONTRIBUTING.md` — branching, commits, PRs, config steps, ownership, shared files
+- [x] `web/src/core/services/*` — data-access stubs for every collection (reports, reportContacts, clusters, teams, assignments, rescueRecords, notifications)
+- [x] `web/src/components/AppShell.jsx` (shared layout + role nav) + `pages/dispatch|responder|dmo/` skeletons; routes wired
+- [ ] Create Firebase project + share config with team (see P0 / `docs/SETUP.md`)
+
 ### P1 — Auth + roles + audit (Oct 16–18) — A
 - [x] Firebase Auth (register/login) — web + mobile (code ready; needs project config)
 - [x] 4 roles in `users/{uid}.role` + rules
@@ -165,3 +171,4 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-14 | P0 | Scaffolded `web/` (Vite+React+Tailwind+Firebase) and `mobile/` (Flutter+Firebase); root `firebase.json`, `.firebaserc`, `web/.env.example` |
 | 2026-10-14 | P1 | Web: firebase init, AuthProvider, authService, role guards, login/register/dashboard, audit `logAction`. Mobile: authService, login/register/home, AuthGate. Web lint 0, build OK; `flutter analyze` clean |
 | 2026-10-14 | docs | Added `docs/SETUP.md` (Firebase + Cloudinary one-time setup) |
+| 2026-10-15 | P0.5 | Pre-split contracts: `docs/CONTRIBUTING.md`, `core/services/*` data layer, `AppShell` + role page skeletons, routes split per role |
