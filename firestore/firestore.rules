@@ -1,0 +1,98 @@
+rules_version = '2';
+
+// FinalProject_DRRM — Firestore security rules.
+// Roles: resident(1) < dispatcher(2) < rescueTeam(3) < dmo(4)
+// NOTE: this is the starting template; refine per-collection as features land (P1+).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function role() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isDispatcher() {
+      return isSignedIn() && role() == 'dispatcher';
+    }
+    function isDmo() {
+      return isSignedIn() && role() == 'dmo';
+    }
+    function isRescueTeam() {
+      return isSignedIn() && role() == 'rescueTeam';
+    }
+    function isStaff() {
+      return isDispatcher() || isDmo();
+    }
+
+    // Users: read own doc; staff read all; only staff change roles; user edits own profile fields.
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isStaff());
+      allow create: if request.auth.uid == uid;
+      allow update: if (request.auth.uid == uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'active']))
+                    || isDispatcher();
+      allow delete: if isDispatcher();
+    }
+
+    // Reports: residents create/read their own; staff read all; staff update status/priority.
+    match /reports/{id} {
+      allow read: if isSignedIn() && (resource.data.reporterId == request.auth.uid || isStaff() || isRescueTeam());
+      allow create: if isSignedIn() && request.resource.data.reporterId == request.auth.uid;
+      allow update: if isStaff() || (resource.data.reporterId == request.auth.uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'priority', 'verifiedBy']));
+      allow delete: if isDispatcher();
+    }
+
+    // Per-report victim/contact details (PII). Staff-only, plus the reporter owns their own.
+    match /reportContacts/{reportId} {
+      allow read: if isSignedIn() && (
+        isStaff() || isRescueTeam() ||
+        get(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid
+      );
+      allow create: if isSignedIn() && (
+        get(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid ||
+        isStaff()
+      );
+      allow update: if isStaff() || isRescueTeam();
+      allow delete: if isDispatcher();
+    }
+
+    // Clusters / teams / assignments / rescueRecords: staff + rescue teams.
+    match /clusters/{id} {
+      allow read: if isSignedIn();
+      allow write: if isDispatcher();
+    }
+    match /teams/{id} {
+      allow read: if isSignedIn();
+      allow write: if isDispatcher();
+    }
+    match /assignments/{id} {
+      allow read: if isSignedIn();
+      allow create, delete: if isDispatcher();
+      allow update: if isDispatcher() || isRescueTeam();
+    }
+    match /rescueRecords/{id} {
+      allow read: if isStaff() || isRescueTeam();
+      allow create: if isRescueTeam() || isDispatcher();
+      allow update, delete: if isDispatcher();
+    }
+
+    // Notifications: a user reads/updates their own; staff create.
+    match /notifications/{id} {
+      allow read, update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+      allow delete: if isStaff();
+    }
+
+    // Audit log: append-only by signed-in users; read by staff.
+    match /logs/{id} {
+      allow read: if isStaff();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

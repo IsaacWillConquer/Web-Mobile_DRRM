@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+
+# env / secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+google-services.json
+GoogleService-Info.plist
+
+# builds
+dist/
+build/
+.metro/
+*.apk
+*.aab
+*.ipa
+
+# flutter / dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+*.g.dart
+mobile/ios/Pods/
+mobile/android/.gradle/
+mobile/android/app/debug/
+mobile/android/app/release/
+
+# firebase cli
+.firebase/
+
+# logs / os / editor
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
