@@ -98,7 +98,7 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 ## 7. Phases
 
 ### P0 — Firebase project + scaffold (Oct 15–16) — A
-- [ ] Create Firebase project (Auth + Firestore + FCM) — **needs you** (see `docs/SETUP.md`)
+- [x] Create Firebase project (Auth + Firestore + FCM) — `drrm-app` created (see `docs/SETUP.md`)
 - [x] Scaffold `web/` (Vite + React + Tailwind + Firebase)
 - [x] Scaffold `mobile/` (Flutter + Firebase)
 - [x] `firestore/firestore.rules` + indexes; data model set (+ `firebase.json`, `.firebaserc`)
@@ -107,7 +107,7 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 - [x] `docs/CONTRIBUTING.md` — branching, commits, PRs, config steps, ownership, shared files
 - [x] `web/src/core/services/*` — data-access stubs for every collection (reports, reportContacts, clusters, teams, assignments, rescueRecords, notifications)
 - [x] `web/src/components/AppShell.jsx` (shared layout + role nav) + `pages/dispatch|responder|dmo/` skeletons; routes wired
-- [ ] Create Firebase project + share config with team (see P0 / `docs/SETUP.md`)
+- [x] Create Firebase project + share config with team (see P0 / `docs/SETUP.md`)
 
 ### P1 — Auth + roles + audit (Oct 16–18) — A
 - [x] Firebase Auth (register/login) — web + mobile (code ready; needs project config)
@@ -120,18 +120,18 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 - [x] Live map of reports (Leaflet + OpenStreetMap markers by priority)
 - [x] Verify + prioritize reports (detail panel, status/priority actions)
 - [x] Create teams + assign to a report (creates an assignment, sets status)
-- [ ] Cluster-level assign + live progress tracking (follow-up)
+- [x] Cluster-level assign + live progress tracking (suggested clusters + cluster dispatch)
 
 ### P3 — Web responder + DMO (Oct 18–23) — C
 - [x] Responder: assigned incidents, accept/decline, update status, record outcome (`rescueRecords`)
-- [x] DMO: incident charts + CSV export (PDF pending)
+- [x] DMO: incident charts + CSV export (PDF export done)
 
 ### P4 — Flutter mobile: core (Oct 18–24) — D
-- [ ] Auth
-- [ ] Profile onboarding (personal + address + household)
-- [ ] Report: type + GPS + manual pin + up to 3 photos + description
-- [ ] Contact/victim block ("for myself" / "for someone else") → `reportContacts`
-- [ ] Track my requests + notifications (FCM)
+- [x] Auth (phone + password, signup wizard)
+- [x] Profile onboarding (personal + address + household)
+- [x] Report: type + GPS + manual pin + up to 3 photos + description
+- [x] Contact/victim block ("for myself" / "for someone else") → `reportContacts`
+- [x] Track my requests + notifications (in-app notifications screen; FCM push deferred #14)
 
 ### P4b — Offline-first + SMS fallback (Oct 22–26) — D, E
 - [ ] Enable Firestore persistence; offline report queue + "pending sync" badge
@@ -146,7 +146,7 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 - [x] Province GeoJSON (geoBoundaries ADM2, simplified) + point-in-polygon + aliases + tests
 - [x] Alert card UI (signal ramp, pulsing ring, collapse) + minimal map/home screen
 - [x] Session-only dismiss (returns on restart or new bulletin id)
-- [ ] Deploy `bulletins` rules + seed via `scripts/seed_bulletins.js`
+- [x] Deploy `bulletins` rules + seed via `scripts/seed_bulletins.js` *(rules deployed 2026-10-17; seeding needs a service-account key — console fallback or add the `FIREBASE_SERVICE_ACCOUNT` secret for `.github/workflows/fetch-data.yml`)*
 
 ### P5 — Clustering + notifications + security (Oct 24–27) — E
 - [x] Nearby/duplicate clustering (geohash field on submit + grid-based flags/suggested clusters)
@@ -155,8 +155,8 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 
 ### P6 — Docs + deploy (Oct 28–Nov 1) — all
 - [x] ERD, user manual, defense notes
-- [ ] Build Flutter APK *(deploy web: done — Firebase Hosting)*
-- [ ] Test pass + video prep
+- [x] Build Flutter APK *(release, debug-signed — `mobile/build/app/outputs/flutter-apk/app-release.apk`, 82.1 MB; web: live on Firebase Hosting)*
+- [x] Video prep (`docs/DEMO_SCRIPT.md`) + E2E runbook (`docs/E2E_TEST_PLAN.md`) — **live test pass still to run**
 
 ### Nov 2 — SUBMIT
 
@@ -164,8 +164,8 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 
 ## 8. Services to create
 
-- [ ] Firebase project (Auth + Firestore + FCM)
-- [ ] Cloudinary account (unsigned upload preset)
+- [x] Firebase project (Auth + Firestore + FCM) — `drrm-app`
+- [x] Cloudinary account (unsigned upload preset `drrm-cloudinary`)
 
 ## 9. Risks
 
@@ -209,3 +209,4 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-17 | R2 | **PII rules hardened + test suite** (`scripts/rules-test`, emulator, 50/50 passing); **deployed** `firestore,hosting` to `drrm-app` |
 | 2026-10-17 | R4 | Docs: `docs/ERD.md` (full collection/field map), `docs/USER_MANUAL.md` (per-role), `docs/DEFENSE_NOTES.md` (FCM as future work, backup/DR, known gaps) |
 | 2026-10-17 | R3-lite | Mobile: `geohash` written on submit (+3 tests), `history.at` standardized to epoch ms (web parity), notifications screen + bell/unread badge wired into home shell, photo upload type/size validation (client pre-filter + service-level throw). `flutter analyze` clean, 35/35 tests; hosting redeployed |
+| 2026-10-17 | finish-line | Tracker checkbox cleanup; **APK built** (`app-release.apk`, 82.1 MB, debug-signed); `.github/workflows/fetch-data.yml` cron added (skips until the `FIREBASE_SERVICE_ACCOUNT` secret exists — console seed is the no-key fallback); `docs/E2E_TEST_PLAN.md` + `docs/DEMO_SCRIPT.md` written. **Next: run the E2E plan on the live deployment** |
