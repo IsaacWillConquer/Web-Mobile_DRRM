@@ -43,8 +43,19 @@ firebase deploy --only firestore
 
 ## 5. Create the first staff account
 1. Register normally (web or mobile) → a `users/{uid}` doc is created with `role: resident`.
-2. In Firestore → `users` → your doc → change `role` to `dispatcher` (console bypasses rules).
-3. Other roles: `rescueTeam`, `dmo`.
+2. In Firestore → `users` → your doc → change `role` to `admin` (console bypasses rules).
+3. Other roles: `dispatcher`, `rescueTeam`, `dmo`.
+
+Once an `admin` exists, they sign in to the web portal and open the **Staff** tab to create,
+edit, enable/disable, and delete staff accounts. That creates the Firebase Auth user and the
+`users/{uid}` profile in one step (no backend needed). Only `admin` can manage accounts.
+
+Optional CLI alternative (creates the Auth user + profile; needs a service account with the
+**Firebase Admin SDK Administrator Service Agent** role):
+```
+set GOOGLE_APPLICATION_CREDENTIALS=C:\path\service-account.json
+node scripts/create_staff.js <email> <password> <admin|dispatcher|rescueTeam|dmo> [name]
+```
 
 ## 6. Cloudinary (report photos)
 1. Create a free account at https://cloudinary.com.

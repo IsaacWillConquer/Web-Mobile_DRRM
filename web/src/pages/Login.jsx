@@ -4,10 +4,20 @@ import { getUserProfile, loginUser, logoutUser } from "../core/auth/authService"
 import { useAuth } from "../core/auth/authContext";
 import { logAction } from "../core/audit/logAction";
 import { APP_NAME, APP_TAGLINE, WEB_ROLES } from "../config/appConfig";
+import { Alert, Button, Field, Icon, Input, Spinner } from "../components/ui";
 
 const STAFF_ONLY =
-  "This portal is for dispatchers, rescue teams, and disaster management officers. " +
-  "Residents, please use the mobile app.";
+  "This portal is for administrators, dispatchers, rescue teams, and disaster " +
+  "management officers. Residents, please use the mobile app.";
+
+const DISABLED =
+  "This account has been disabled. Contact an administrator to restore access.";
+
+function blockReason(profile) {
+  if (!profile || !WEB_ROLES.includes(profile.role)) return STAFF_ONLY;
+  if (profile.active === false) return DISABLED;
+  return null;
+}
 
 function friendlyError(err) {
   const code = err?.code ?? "";
@@ -29,6 +39,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -37,11 +48,12 @@ export default function Login() {
     (async () => {
       const profile = await getUserProfile(user.uid);
       if (!active) return;
-      if (profile && WEB_ROLES.includes(profile.role)) {
+      const reason = blockReason(profile);
+      if (!reason) {
         navigate("/dashboard", { replace: true });
       } else {
         await logoutUser();
-        setError(STAFF_ONLY);
+        setError(reason);
       }
     })();
     return () => {
@@ -56,12 +68,14 @@ export default function Login() {
     try {
       const credential = await loginUser({ email, password });
       const profile = await getUserProfile(credential.user.uid);
-      if (!profile || !WEB_ROLES.includes(profile.role)) {
+      const reason = blockReason(profile);
+      if (reason) {
         await logAction(credential.user.uid, "web_login_blocked", {
           role: profile?.role ?? null,
+          active: profile?.active ?? null,
         });
         await logoutUser();
-        setError(STAFF_ONLY);
+        setError(reason);
         return;
       }
       await logAction(credential.user.uid, "auth_login");
@@ -74,55 +88,69 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-900">{APP_NAME}</h1>
-        <p className="mt-1 text-sm text-slate-500">{APP_TAGLINE}</p>
-        <p className="mt-2 text-xs font-medium uppercase tracking-wide text-blue-700">
-          Staff Portal
-        </p>
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50 px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-700 text-white shadow-lg shadow-blue-900/20">
+            <Icon name="shield" className="h-6 w-6" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{APP_NAME}</h1>
+            <p className="text-sm text-slate-500">{APP_TAGLINE}</p>
+          </div>
+        </div>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Email</span>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-600"
-            />
-          </label>
+        <div className="rounded-2xl bg-white p-8 shadow-xl shadow-slate-900/5 ring-1 ring-slate-900/5">
+          <p className="mb-6 text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Staff Portal
+          </p>
 
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Password</span>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-blue-600"
-            />
-          </label>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Field label="Email">
+              <Input
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </Field>
 
-          {error ? (
-            <p className="text-sm text-red-600" role="alert">
-              {error}
-            </p>
-          ) : null}
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Password</span>
+              <div className="relative mt-1">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="mt-0 pr-11"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-700"
+                >
+                  <Icon name={showPassword ? "eyeOff" : "eye"} className="h-5 w-5" />
+                </button>
+              </div>
+            </label>
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-lg bg-blue-700 py-2.5 font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
-          >
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+            {error ? <Alert tone="danger">{error}</Alert> : null}
 
-        <p className="mt-4 text-center text-xs text-slate-400">
-          Accounts are issued by the administrator.
-        </p>
+            <Button type="submit" size="lg" className="w-full" disabled={busy}>
+              {busy ? <Spinner className="h-4 w-4" /> : null}
+              {busy ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center text-xs text-slate-400">
+            Accounts are issued by the administrator.
+          </p>
+        </div>
       </div>
     </div>
   );

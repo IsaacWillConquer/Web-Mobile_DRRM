@@ -3,7 +3,7 @@ import { useAuth } from "../auth/authContext";
 import { WEB_ROLES } from "../../config/appConfig";
 
 export default function ProtectedRoute({ children, roles }) {
-  const { user, role, loading } = useAuth();
+  const { user, profile, role, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -14,7 +14,7 @@ export default function ProtectedRoute({ children, roles }) {
     );
   }
 
-  if (!user) {
+  if (!user || profile?.active === false) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

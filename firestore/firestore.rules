@@ -1,8 +1,9 @@
 rules_version = '2';
 
 // FinalProject_DRRM — Firestore security rules.
-// Roles: resident < dispatcher < rescueTeam < dmo
-// Web portal is staff-only (dispatcher/rescueTeam/dmo); residents use mobile.
+// Roles: resident < dispatcher < rescueTeam < dmo, with `admin` as superuser.
+// Web portal is staff-only (admin/dispatcher/rescueTeam/dmo); residents use mobile.
+// Only `admin` may create/update/delete staff accounts.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -13,20 +14,32 @@ service cloud.firestore {
     function role() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
+    // Disabled accounts (active: false) lose all role-based access.
+    function isActive() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
+    }
+    function isAdmin() {
+      return isSignedIn() && isActive() && role() == 'admin';
+    }
     function isDispatcher() {
-      return isSignedIn() && role() == 'dispatcher';
+      return isSignedIn() && isActive() && role() == 'dispatcher';
     }
     function isDmo() {
-      return isSignedIn() && role() == 'dmo';
+      return isSignedIn() && isActive() && role() == 'dmo';
     }
     function isRescueTeam() {
-      return isSignedIn() && role() == 'rescueTeam';
+      return isSignedIn() && isActive() && role() == 'rescueTeam';
     }
+    // Admin is a superuser: full staff access on the same database.
     function isStaff() {
-      return isDispatcher() || isDmo();
+      return isAdmin() || isDispatcher() || isDmo();
     }
     function isResponder() {
       return isStaff() || isRescueTeam();
+    }
+    // Dispatch-level writes: dispatchers plus the superuser admin.
+    function canDispatch() {
+      return isDispatcher() || isAdmin();
     }
     function validStatus(s) {
       return s in ['Submitted', 'Under Verification', 'Verified', 'Awaiting Assignment',
@@ -41,15 +54,18 @@ service cloud.firestore {
     }
 
     // Users: read own doc; staff read all. Self-registration always creates a resident.
+    // Only an admin may create/update/delete staff accounts (role/active), and an
+    // admin may not change their own role/active (prevents self-lockout).
     match /users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isStaff());
-      allow create: if request.auth.uid == uid
-                    && request.resource.data.role == 'resident'
-                    && request.resource.data.active == true;
+      allow create: if (request.auth.uid == uid
+                        && request.resource.data.role == 'resident'
+                        && request.resource.data.active == true)
+                    || isAdmin();
       allow update: if (request.auth.uid == uid
                         && !changedKeys().hasAny(['role', 'active']))
-                    || isDispatcher();
-      allow delete: if isDispatcher();
+                    || (isAdmin() && request.auth.uid != uid);
+      allow delete: if isAdmin() && request.auth.uid != uid;
     }
 
     // Reports: residents create/read their own; responders read all; staff update status/priority.
@@ -65,8 +81,11 @@ service cloud.firestore {
                         && validStatus(request.resource.data.status)
                         && validPriority(request.resource.data.priority))
                     || (resource.data.reporterId == request.auth.uid
-                        && !changedKeys().hasAny(['status', 'priority', 'verifiedBy']));
-      allow delete: if isDispatcher();
+                        && !changedKeys().hasAny(['status', 'priority', 'verifiedBy']))
+                    || (isResponder()
+                        && validStatus(request.resource.data.status)
+                        && !changedKeys().hasAny(['priority', 'verifiedBy', 'reporterId']));
+      allow delete: if canDispatch();
     }
 
     // Per-report victim/contact details (PII): reporters own their own; responders read.
@@ -78,27 +97,27 @@ service cloud.firestore {
                     && (isStaff()
                         || get(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid);
       allow update: if isResponder();
-      allow delete: if isDispatcher();
+      allow delete: if canDispatch();
     }
 
     // Clusters / teams / assignments / rescueRecords: responders only.
     match /clusters/{id} {
       allow read: if isResponder();
-      allow write: if isDispatcher();
+      allow write: if canDispatch();
     }
     match /teams/{id} {
       allow read: if isResponder();
-      allow write: if isDispatcher();
+      allow write: if canDispatch();
     }
     match /assignments/{id} {
       allow read: if isResponder();
-      allow create, delete: if isDispatcher();
-      allow update: if isDispatcher() || isRescueTeam();
+      allow create, delete: if canDispatch();
+      allow update: if canDispatch() || isRescueTeam();
     }
     match /rescueRecords/{id} {
       allow read: if isResponder();
-      allow create: if isRescueTeam() || isDispatcher();
-      allow update, delete: if isDispatcher();
+      allow create: if isRescueTeam() || canDispatch();
+      allow update, delete: if canDispatch();
     }
 
     // Notifications: a user reads/updates their own; responders create; staff delete.

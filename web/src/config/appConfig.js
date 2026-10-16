@@ -6,16 +6,30 @@ export const ROLES = {
   dispatcher: "dispatcher",
   rescueTeam: "rescueTeam",
   dmo: "dmo",
+  admin: "admin",
 };
 
 export const ROLE_LABELS = {
   resident: "Resident / Reporter",
-  dispatcher: "Administrator / Dispatcher",
+  dispatcher: "Dispatcher",
   rescueTeam: "Rescue Team",
   dmo: "Disaster Management Officer",
+  admin: "Administrator",
 };
 
-export const WEB_ROLES = [ROLES.dispatcher, ROLES.rescueTeam, ROLES.dmo];
+export const STAFF_ROLES = [
+  ROLES.dispatcher,
+  ROLES.rescueTeam,
+  ROLES.dmo,
+  ROLES.admin,
+];
+
+export const WEB_ROLES = [
+  ROLES.admin,
+  ROLES.dispatcher,
+  ROLES.rescueTeam,
+  ROLES.dmo,
+];
 
 export const COLLECTIONS = {
   users: "users",

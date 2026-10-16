@@ -5,6 +5,7 @@
   "description": "Admin + data fetcher scripts for FinalProject_DRRM",
   "scripts": {
     "seed:bulletins": "node seed_bulletins.js",
+    "create:staff": "node create_staff.js",
     "fetch:typhoon": "node fetch_typhoon.js",
     "fetch:rain": "node fetch_rain.js"
   },

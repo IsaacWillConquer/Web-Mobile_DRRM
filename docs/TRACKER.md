@@ -38,11 +38,13 @@ IT 305 · Bulacan State University · **Submit: Nov 2, 2026**
 | Role | Notes |
 |---|---|
 | `resident` | submits reports, tracks status |
-| `dispatcher` | verifies, prioritizes, assigns teams, manages accounts |
+| `dispatcher` | verifies, prioritizes, assigns teams |
 | `rescueTeam` | receives/accepts assignments, updates status, records outcome |
 | `dmo` | monitors trends, generates reports/stats |
+| `admin` | superuser on the same database — full staff access + staff CRUD (only role that manages accounts) |
 
-Stored in `users/{uid}.role`; enforced by Firestore rules.
+Stored in `users/{uid}.role`; enforced by Firestore rules. Only `admin` may
+create/update/delete staff accounts.
 
 ## 3. Report statuses
 
@@ -109,17 +111,20 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 
 ### P1 — Auth + roles + audit (Oct 16–18) — A
 - [x] Firebase Auth (register/login) — web + mobile (code ready; needs project config)
-- [x] 4 roles in `users/{uid}.role` + rules
+- [x] 5 roles in `users/{uid}.role` + rules (`resident`, `dispatcher`, `rescueTeam`, `dmo`, `admin`)
 - [x] `logs` audit collection + logging helper
+- [x] Admin-only **Staff** page: create/edit/enable-disable/delete staff (in-web, no backend)
+- [x] `active:false` enforced at login + in rules (disabled accounts lose access)
 
 ### P2 — Web admin/dispatch (Oct 18–23) — B
-- [ ] Live map of reports/clusters
-- [ ] Verify + prioritize reports
-- [ ] Create teams, assign to cluster, track progress
+- [x] Live map of reports (Leaflet + OpenStreetMap markers by priority)
+- [x] Verify + prioritize reports (detail panel, status/priority actions)
+- [x] Create teams + assign to a report (creates an assignment, sets status)
+- [ ] Cluster-level assign + live progress tracking (follow-up)
 
 ### P3 — Web responder + DMO (Oct 18–23) — C
-- [ ] Responder: assigned incidents, accept, update status, record outcome
-- [ ] DMO: charts + CSV/PDF reports
+- [x] Responder: assigned incidents, accept/decline, update status, record outcome (`rescueRecords`)
+- [x] DMO: incident charts + CSV export (PDF pending)
 
 ### P4 — Flutter mobile: core (Oct 18–24) — D
 - [ ] Auth
@@ -192,3 +197,10 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-15 | P1 | Mobile auth → **phone + password** (`+63` normalization, synthetic Auth email), redesigned login + 3-step register wizard (profile: name/suffix/birthdate/disability/address/household); web stays email; phone/logic tests |
 | 2026-10-15 | P4 | Map-first home shell (Map/Profile tabs via IndexedStack, custom bottom bar + raised Report button), flat `positron` map (tilt/rotate disabled), working recenter (`resolvePosition` w/ timeLimit + last-known fallback), My Reports index bug fixed (Dart sort), card restyled to spec |
 | 2026-10-15 | P4c | Map Layers sheet (Hazards stub + Map-layers toggles), Storm Signals / Typhoons / Rain overlays (GeoJSON builders + MapLibre layers), active-layer pill, layers+recenter buttons; MapTiler styles (key gitignored); JMA + Open-Meteo fetchers + GitHub Actions cron; regions GeoJSON asset |
+| 2026-10-15 | P4c | Layer toggles fixed: live map update, sheet stays open, per-layer empty-state; `forecasts` read rule added |
+| 2026-10-15 | P2 | **Web dispatch built**: Leaflet live map (markers by priority), report list + filters, detail panel (verify/reject/priority, PII contact), teams create + assign → assignment + `Team Assigned` |
+| 2026-10-16 | P1 | **Admin role** (`admin` superuser) + admin-only Staff CRUD page (in-web Auth creation via Identity Toolkit REST + admin Firestore write); `create_staff.js` supports `admin`; login role fix |
+| 2026-10-16 | P1 | `active:false` enforced at login/guard + Firestore rules (`isActive()`); responders may update report status (status-only) |
+| 2026-10-16 | P3 | **Web responder built** (accept/decline, start, complete → `rescueRecords` + notification + report `Resolved`); **DMO analytics** (KPIs, type/priority bars, status breakdown, CSV export)
+| 2026-10-16 | UI | Shared UI kit (`components/ui.jsx`), refreshed shell (icons, avatar, sticky header), role-aware dashboard, polished login (show/hide password) |
+| 2026-10-16 | UI | **Analytics overhaul**: dependency-free SVG charts (donut/bars/area), KPIs incl. reporters & resolve rate, date-range + type filters, **reports-by-area** (barangay/city from reporter profile), CSV export |

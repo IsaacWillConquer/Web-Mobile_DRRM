@@ -37,5 +37,8 @@ export function observeAuth(callback) {
 
 export async function getUserProfile(uid) {
   const snapshot = await getDoc(doc(db, COLLECTIONS.users, uid));
-  return snapshot.exists() ? snapshot.data() : null;
+  if (!snapshot.exists()) return null;
+  const data = snapshot.data();
+  if (typeof data.role === "string") data.role = data.role.trim();
+  return data;
 }

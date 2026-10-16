@@ -1,17 +1,470 @@
+import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
+import * as reportsService from "../../core/services/reportsService";
+import { watchAllUsers } from "../../core/services/usersService";
+import { Badge, Button, Card, EmptyState, Icon, Spinner } from "../../components/ui";
+import {
+  AreaTrend,
+  Bars,
+  Donut,
+  DonutLegend,
+  HBarList,
+} from "../../components/charts";
+import { CHART_COLORS, PALETTE } from "../../components/chartColors";
+import { DISASTER_TYPES } from "../../config/appConfig";
+import { statusChip } from "../dispatch/constants";
+
+const OPEN_STATUSES = [
+  "Submitted",
+  "Under Verification",
+  "Verified",
+  "Awaiting Assignment",
+  "Team Assigned",
+  "Rescue in Progress",
+];
+
+const STATUS_COLORS = {
+  Submitted: CHART_COLORS.slate,
+  "Under Verification": CHART_COLORS.amber,
+  Verified: CHART_COLORS.emerald,
+  "Awaiting Assignment": CHART_COLORS.indigo,
+  "Team Assigned": CHART_COLORS.blue,
+  "Rescue in Progress": CHART_COLORS.sky,
+  Resolved: CHART_COLORS.teal,
+  Closed: CHART_COLORS.slate,
+  Rejected: CHART_COLORS.red,
+  Duplicate: CHART_COLORS.pink,
+  Cancelled: CHART_COLORS.red,
+};
+
+const PRIORITY_COLORS = {
+  high: CHART_COLORS.red,
+  medium: CHART_COLORS.amber,
+  low: CHART_COLORS.emerald,
+};
+
+const RANGES = [
+  { id: "7d", label: "7 days" },
+  { id: "30d", label: "30 days" },
+  { id: "all", label: "All time" },
+];
+
+function tsToDate(ts) {
+  if (!ts) return null;
+  if (typeof ts.toDate === "function") return ts.toDate();
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatDay(d) {
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatDateTime(ts) {
+  const d = tsToDate(ts);
+  return d ? d.toLocaleString() : "—";
+}
+
+function toCsv(rows) {
+  const headers = [
+    "id",
+    "disasterType",
+    "status",
+    "priority",
+    "peopleAffected",
+    "area",
+    "lat",
+    "lng",
+    "createdAt",
+  ];
+  const escape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const lines = [headers.join(",")];
+  rows.forEach((r) => {
+    lines.push(
+      [
+        r.id,
+        r.disasterType,
+        r.status,
+        r.priority,
+        r.peopleAffected,
+        r._area,
+        r.lat,
+        r.lng,
+        tsToDate(r.createdAt)?.toISOString() ?? "",
+      ]
+        .map(escape)
+        .join(","),
+    );
+  });
+  return lines.join("\n");
+}
 
 export default function DmoPage() {
+  const [reports, setReports] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [range, setRange] = useState("30d");
+  const [typeFilter, setTypeFilter] = useState("all");
+
+  useEffect(() => {
+    const unsubR = reportsService.watchReports(
+      {},
+      (snap) => {
+        setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      },
+    );
+    const unsubU = watchAllUsers((rows) => setUsers(rows), () => {});
+    return () => {
+      unsubR();
+      unsubU();
+    };
+  }, []);
+
+  const userById = useMemo(() => {
+    const map = {};
+    users.forEach((u) => {
+      map[u.uid] = u;
+    });
+    return map;
+  }, [users]);
+
+  function areaOf(report) {
+    const user = userById[report.reporterId];
+    const address = user?.profile?.address ?? user?.address ?? null;
+    const barangay = address?.barangay?.trim();
+    const city = address?.city?.trim();
+    if (barangay && city) return `${barangay}, ${city}`;
+    if (barangay) return barangay;
+    if (city) return city;
+    return "Unknown area";
+  }
+
+  const rangeStart = useMemo(() => {
+    if (range === "all") return null;
+    const days = range === "7d" ? 7 : 30;
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (days - 1));
+    return start;
+  }, [range]);
+
+  const scoped = useMemo(() => {
+    return reports
+      .map((r) => ({ ...r, _date: tsToDate(r.createdAt), _area: areaOf(r) }))
+      .filter((r) => {
+        if (typeFilter !== "all" && r.disasterType !== typeFilter) return false;
+        if (rangeStart && (!r._date || r._date < rangeStart)) return false;
+        return true;
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports, typeFilter, rangeStart, userById]);
+
+  const stats = useMemo(() => {
+    const byStatus = {};
+    const byPriority = { high: 0, medium: 0, low: 0 };
+    const byType = {};
+    const byArea = {};
+    let people = 0;
+    const reporters = new Set();
+
+    const days = range === "all" ? 14 : range === "7d" ? 7 : 30;
+    const trendMap = {};
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      trendMap[d.toDateString()] = 0;
+    }
+
+    scoped.forEach((r) => {
+      byStatus[r.status ?? "Unknown"] = (byStatus[r.status ?? "Unknown"] ?? 0) + 1;
+      if (byPriority[r.priority] != null) byPriority[r.priority] += 1;
+      byType[r.disasterType ?? "Other"] = (byType[r.disasterType ?? "Other"] ?? 0) + 1;
+      if (!byArea[r._area]) byArea[r._area] = { reports: 0, people: 0 };
+      byArea[r._area].reports += 1;
+      byArea[r._area].people += Number(r.peopleAffected) || 0;
+      people += Number(r.peopleAffected) || 0;
+      reporters.add(r.reporterId);
+      if (r._date) {
+        const key = r._date.toDateString();
+        if (trendMap[key] != null) trendMap[key] += 1;
+      }
+    });
+
+    const statusData = Object.entries(byStatus)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({ label, value, color: STATUS_COLORS[label] ?? CHART_COLORS.slate }));
+
+    const priorityData = ["high", "medium", "low"].map((p) => ({
+      label: p,
+      value: byPriority[p],
+      color: PRIORITY_COLORS[p],
+    }));
+
+    const typeData = Object.entries(byType)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], i) => ({ label, value, color: PALETTE[i % PALETTE.length] }));
+
+    const areaData = Object.entries(byArea)
+      .map(([label, v]) => ({ label, value: v.reports, people: v.people }))
+      .sort((a, b) => b.value - a.value);
+
+    const trendData = Object.entries(trendMap).map(([key, value]) => ({
+      label: formatDay(new Date(key)),
+      value,
+    }));
+
+    const open = scoped.filter((r) => OPEN_STATUSES.includes(r.status)).length;
+    const resolved = byStatus.Resolved ?? 0;
+
+    return {
+      total: scoped.length,
+      open,
+      resolved,
+      people,
+      reporters: reporters.size,
+      resolveRate: scoped.length ? Math.round((resolved / scoped.length) * 100) : 0,
+      statusData,
+      priorityData,
+      typeData,
+      areaData,
+      trendData,
+    };
+  }, [scoped, range]);
+
+  function exportCsv() {
+    const blob = new Blob([toCsv(scoped)], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `drrm-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const actions = (
+    <>
+      <Button variant="secondary" onClick={exportCsv} disabled={scoped.length === 0}>
+        <Icon name="download" className="h-4 w-4" />
+        Export CSV
+      </Button>
+    </>
+  );
+
   return (
     <AppShell
-      title="Analytics"
-      subtitle="Monitor incident trends and generate operational reports."
+      title="Operations Analytics"
+      subtitle="Incident trends, area coverage, and operational reporting."
+      actions={actions}
     >
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
-        <h3 className="font-semibold text-slate-900">DMO module</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Incident charts plus CSV/PDF report export (P3 — Web #2).
-        </p>
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          Live
+        </div>
+        <div className="flex rounded-full bg-white p-0.5 ring-1 ring-inset ring-slate-200">
+          {RANGES.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setRange(r.id)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                range === r.id ? "bg-blue-700 text-white" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-blue-600"
+        >
+          <option value="all">All disaster types</option>
+          {DISASTER_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
       </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-10 text-slate-500">
+          <Spinner /> Loading analytics…
+        </div>
+      ) : error ? (
+        <Card className="p-6">
+          <p className="text-sm text-red-700">
+            {error}. Check Firestore rules for the DMO role.
+          </p>
+        </Card>
+      ) : scoped.length === 0 ? (
+        <EmptyState
+          icon="analytics"
+          title="No incident data in this range"
+          description="Adjust the filters, or once residents submit reports, trends and area coverage will appear here."
+        />
+      ) : (
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <Kpi label="Reports" value={stats.total} tone="text-slate-900" icon="inbox" />
+            <Kpi label="Reporters" value={stats.reporters} tone="text-blue-700" icon="staff" />
+            <Kpi label="Open" value={stats.open} tone="text-amber-600" icon="clock" />
+            <Kpi label="Resolved" value={stats.resolved} tone="text-emerald-600" icon="check" />
+            <Kpi
+              label="Resolve rate"
+              value={stats.resolveRate}
+              suffix="%"
+              tone="text-teal-600"
+              icon="shield"
+            />
+            <Kpi
+              label="People affected"
+              value={stats.people}
+              tone="text-red-600"
+              icon="alert"
+            />
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="p-6">
+              <h3 className="mb-4 font-semibold text-slate-900">Reports by status</h3>
+              <div className="flex flex-col items-center gap-6 sm:flex-row">
+                <Donut data={stats.statusData} centerLabel="Total" />
+                <div className="w-full flex-1">
+                  <DonutLegend data={stats.statusData} />
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <h3 className="mb-4 font-semibold text-slate-900">Reports by priority</h3>
+              <div className="flex flex-col items-center gap-6 sm:flex-row">
+                <Donut data={stats.priorityData} centerLabel="Total" />
+                <div className="w-full flex-1">
+                  <DonutLegend data={stats.priorityData} />
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <Card className="p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-semibold text-slate-900">Reports per day</h3>
+              <span className="text-xs text-slate-400">
+                {range === "all" ? "Last 14 days" : range === "7d" ? "Last 7 days" : "Last 30 days"}
+              </span>
+            </div>
+            <AreaTrend data={stats.trendData} color={CHART_COLORS.blue} />
+          </Card>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="p-6">
+              <h3 className="mb-4 font-semibold text-slate-900">Incidents by type</h3>
+              <Bars data={stats.typeData} color={CHART_COLORS.blue} />
+            </Card>
+
+            <Card className="p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="font-semibold text-slate-900">Reports by area</h3>
+                <span className="text-xs text-slate-400">Where residents reported from</span>
+              </div>
+              {stats.areaData.length === 0 ? (
+                <p className="text-sm text-slate-500">No area data available.</p>
+              ) : (
+                <HBarList
+                  data={stats.areaData.slice(0, 7).map((a, i) => ({
+                    label: `${a.label} · ${a.people} affected`,
+                    value: a.value,
+                    color: PALETTE[i % PALETTE.length],
+                  }))}
+                />
+              )}
+            </Card>
+          </div>
+
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <h3 className="font-semibold text-slate-900">Recent reports</h3>
+              <span className="text-xs text-slate-400">{scoped.length} in range</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-6 py-3 font-medium">Type</th>
+                    <th className="px-6 py-3 font-medium">Area</th>
+                    <th className="px-6 py-3 font-medium">Status</th>
+                    <th className="px-6 py-3 font-medium">Priority</th>
+                    <th className="px-6 py-3 font-medium">People</th>
+                    <th className="px-6 py-3 font-medium">Submitted</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[...scoped]
+                    .sort((a, b) => (b._date?.getTime() ?? 0) - (a._date?.getTime() ?? 0))
+                    .slice(0, 10)
+                    .map((r) => (
+                      <tr key={r.id}>
+                        <td className="px-6 py-3 font-medium text-slate-800">
+                          {r.disasterType ?? "—"}
+                        </td>
+                        <td className="px-6 py-3 text-slate-600">{r._area}</td>
+                        <td className="px-6 py-3">
+                          <span className={statusChip(r.status)}>{r.status ?? "—"}</span>
+                        </td>
+                        <td className="px-6 py-3">
+                          <Badge
+                            className={`capitalize ${
+                              r.priority === "high"
+                                ? "bg-red-100 text-red-700"
+                                : r.priority === "medium"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {r.priority ?? "—"}
+                          </Badge>
+                        </td>
+                        <td className="px-6 py-3 tabular-nums text-slate-600">
+                          {r.peopleAffected ?? "—"}
+                        </td>
+                        <td className="px-6 py-3 text-slate-500">{formatDateTime(r.createdAt)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
     </AppShell>
+  );
+}
+
+function Kpi({ label, value, suffix = "", tone, icon }) {
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
+        <span className={tone}>
+          <Icon name={icon} className="h-4 w-4" />
+        </span>
+      </div>
+      <p className={`mt-3 text-3xl font-bold tabular-nums ${tone}`}>
+        {value}
+        {suffix}
+      </p>
+    </Card>
   );
 }
