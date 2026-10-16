@@ -182,17 +182,26 @@ class _MapTabState extends State<MapTab> {
   }
 
   Future<void> _openLayers() async {
-    final result = await showModalBottomSheet<MapOverlay>(
+    await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => MapLayersSheet(active: _active),
+      builder: (_) => MapLayersSheet(
+        active: _active,
+        onChanged: _onOverlayChanged,
+        typhoonAvailable: _typhoon?.hasTrack ?? false,
+        signalsAvailable: _typhoon?.hasSignals ?? false,
+        rainAvailable: _rain?.regions.isNotEmpty ?? false,
+      ),
     );
-    if (result == null || !mounted) return;
-    setState(() => _active = result);
-    await _applyOverlay();
+  }
+
+  void _onOverlayChanged(MapOverlay overlay) {
+    setState(() => _active = overlay);
+    _applyOverlay();
   }
 
   void _showMessage(String text) {

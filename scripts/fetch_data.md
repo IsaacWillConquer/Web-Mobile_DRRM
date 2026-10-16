@@ -31,6 +31,20 @@ The service account needs a Firestore data role (e.g. **Cloud Datastore User**).
 2. The workflow writes it to a temp file and sets `GOOGLE_APPLICATION_CREDENTIALS`.
    The key is never committed.
 
+## Staff accounts
+
+`create_staff.js` creates an Auth user and sets `users/{uid}.role` to a staff
+role (needs the Admin SDK key + IAM permissions):
+
+```
+node create_staff.js dispatcher@drrm.app "Password123" dispatcher "DRRM Dispatcher"
+# roles: dispatcher | rescueTeam | dmo
+```
+
+If the service account lacks IAM roles (error: *insufficient permission*), create
+the user in Firebase Console → Authentication, then set `users/{uid}.role` in
+Firestore to `dispatcher` / `rescueTeam` / `dmo` (`active: true`).
+
 ## Attribution
 
 - JMA: https://www.jma.go.jp/bosai/typhoon/
