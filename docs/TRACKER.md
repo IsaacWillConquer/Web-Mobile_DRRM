@@ -149,13 +149,13 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 - [ ] Deploy `bulletins` rules + seed via `scripts/seed_bulletins.js`
 
 ### P5 — Clustering + notifications + security (Oct 24–27) — E
-- [ ] Nearby/duplicate clustering (geohash)
-- [ ] FCM notifications on status changes
-- [ ] Upload validation, PII protection (reportContacts rules), disclaimer, hotline copy
+- [x] Nearby/duplicate clustering (geohash field on submit + grid-based flags/suggested clusters)
+- [ ] FCM notifications on status changes *(in-app notifications shipped; FCM push deferred #14)*
+- [x] Upload validation (type/size, mobile), PII protection (reportContacts rules), disclaimer, hotline copy
 
 ### P6 — Docs + deploy (Oct 28–Nov 1) — all
-- [ ] ERD, user manual, defense notes
-- [ ] Deploy web (Firebase Hosting), build Flutter APK
+- [x] ERD, user manual, defense notes
+- [ ] Build Flutter APK *(deploy web: done — Firebase Hosting)*
 - [ ] Test pass + video prep
 
 ### Nov 2 — SUBMIT
@@ -205,3 +205,7 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-16 | UI | Shared UI kit (`components/ui.jsx`), refreshed shell (icons, avatar, sticky header), role-aware dashboard, polished login (show/hide password) |
 | 2026-10-16 | UI | **Analytics overhaul**: dependency-free SVG charts (donut/bars/area), KPIs incl. reporters & resolve rate, date-range + type filters, **reports-by-area** (barangay/city from reporter profile), CSV export |
 | 2026-10-16 | P2/P3 | Dispatch refreshed (UI kit, map pins/**density** mode, priority legend, type filter); **notification center** (bell, unread badge, mark read/all) + notifications emitted on verify/reject/priority/assign; **suggested clusters** (client-side) → assign team + **live cluster progress**; Analytics: avg time-to-verify/resolve + **PDF** export |
+| 2026-10-17 | R1 | **Web R1 complete** (9 steps): report timeline, admin Activity page, safety copy, new-report pings (web badge + mobile dispatcher fan-out + rule-locked shape), reject-with-reason, close incident, duplicate flags, rescue-start notify, rescue outcomes in analytics. Lint + build green |
+| 2026-10-17 | R2 | **PII rules hardened + test suite** (`scripts/rules-test`, emulator, 50/50 passing); **deployed** `firestore,hosting` to `drrm-app` |
+| 2026-10-17 | R4 | Docs: `docs/ERD.md` (full collection/field map), `docs/USER_MANUAL.md` (per-role), `docs/DEFENSE_NOTES.md` (FCM as future work, backup/DR, known gaps) |
+| 2026-10-17 | R3-lite | Mobile: `geohash` written on submit (+3 tests), `history.at` standardized to epoch ms (web parity), notifications screen + bell/unread badge wired into home shell, photo upload type/size validation (client pre-filter + service-level throw). `flutter analyze` clean, 35/35 tests; hosting redeployed |

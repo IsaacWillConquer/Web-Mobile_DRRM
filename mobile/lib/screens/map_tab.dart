@@ -246,7 +246,7 @@ class _MapTabState extends State<MapTab> {
         SafeArea(
           bottom: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            padding: const EdgeInsets.fromLTRB(12, 8, 64, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

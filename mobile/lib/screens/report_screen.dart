@@ -101,7 +101,23 @@ class _ReportScreenState extends State<ReportScreen> {
       imageQuality: 70,
     );
     if (picked.isEmpty) return;
-    setState(() => _photos.addAll(picked.take(remaining)));
+    final valid = <XFile>[];
+    final problems = <String>[];
+    for (final photo in picked) {
+      final problem = await CloudinaryService.validateImage(photo.path);
+      if (problem == null) {
+        valid.add(photo);
+      } else {
+        problems.add(problem);
+      }
+    }
+    if (problems.isNotEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(problems.join('\n'))),
+      );
+    }
+    if (valid.isEmpty) return;
+    setState(() => _photos.addAll(valid.take(remaining)));
   }
 
   Future<void> _submit() async {
