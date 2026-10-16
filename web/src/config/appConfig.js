@@ -1,6 +1,12 @@
 export const APP_NAME = "DRRM";
 export const APP_TAGLINE = "Disaster Rescue Reporting & Monitoring";
 
+export const LDRRMO_HOTLINE = "+639000000000";
+
+export const SAFETY_NOTICE =
+  "Submitting a report does not guarantee immediate rescue. " +
+  "For life-threatening emergencies, call the LDRRMO hotline.";
+
 export const ROLES = {
   resident: "resident",
   dispatcher: "dispatcher",
@@ -41,6 +47,7 @@ export const COLLECTIONS = {
   rescueRecords: "rescueRecords",
   notifications: "notifications",
   logs: "logs",
+  config: "config",
 };
 
 export const REPORT_STATUSES = [

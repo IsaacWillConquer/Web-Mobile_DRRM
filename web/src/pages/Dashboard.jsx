@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../core/auth/authContext";
 import { Badge, Card, Icon } from "../components/ui";
-import { ROLE_LABELS, ROLES } from "../config/appConfig";
+import { LDRRMO_HOTLINE, ROLE_LABELS, ROLES, SAFETY_NOTICE } from "../config/appConfig";
 
 const MODULES = [
   {
@@ -64,7 +64,22 @@ export default function Dashboard() {
           </div>
         </Card>
       ) : (
-        <Card className="mb-6 flex flex-wrap items-center justify-between gap-4 p-6">
+        <>
+          <Card className="mb-6 flex items-start gap-3 border-l-4 border-amber-400 p-4">
+            <span className="mt-0.5 text-amber-500">
+              <Icon name="alert" className="h-5 w-5" />
+            </span>
+            <p className="text-sm text-amber-900">
+              {SAFETY_NOTICE}{" "}
+              <a
+                href={`tel:${LDRRMO_HOTLINE}`}
+                className="font-semibold underline decoration-amber-400 underline-offset-2 hover:text-amber-700"
+              >
+                {LDRRMO_HOTLINE}
+              </a>
+            </p>
+          </Card>
+          <Card className="mb-6 flex flex-wrap items-center justify-between gap-4 p-6">
           <div className="flex items-center gap-4">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
               <Icon name="shield" className="h-6 w-6" />
@@ -75,7 +90,8 @@ export default function Dashboard() {
             </div>
           </div>
           <Badge className="bg-blue-50 text-blue-700">{ROLE_LABELS[role] ?? role}</Badge>
-        </Card>
+          </Card>
+        </>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -7,9 +7,14 @@
     "seed:bulletins": "node seed_bulletins.js",
     "create:staff": "node create_staff.js",
     "fetch:typhoon": "node fetch_typhoon.js",
-    "fetch:rain": "node fetch_rain.js"
+    "fetch:rain": "node fetch_rain.js",
+    "test:rules": "firebase emulators:exec --only firestore --project rules-test-drrm \"node rules-test/run-tests.js\""
   },
   "dependencies": {
     "firebase-admin": "^13.0.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.0.0"
   }
 }

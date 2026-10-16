@@ -3,7 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { getUserProfile, loginUser, logoutUser } from "../core/auth/authService";
 import { useAuth } from "../core/auth/authContext";
 import { logAction } from "../core/audit/logAction";
-import { APP_NAME, APP_TAGLINE, WEB_ROLES } from "../config/appConfig";
+import {
+  APP_NAME,
+  APP_TAGLINE,
+  LDRRMO_HOTLINE,
+  SAFETY_NOTICE,
+  WEB_ROLES,
+} from "../config/appConfig";
 import { Alert, Button, Field, Icon, Input, Spinner } from "../components/ui";
 
 const STAFF_ONLY =
@@ -151,6 +157,13 @@ export default function Login() {
             Accounts are issued by the administrator.
           </p>
         </div>
+
+        <p className="mt-4 text-center text-xs leading-relaxed text-slate-400">
+          {SAFETY_NOTICE}{" "}
+          <a href={`tel:${LDRRMO_HOTLINE}`} className="font-medium text-slate-500 hover:underline">
+            {LDRRMO_HOTLINE}
+          </a>
+        </p>
       </div>
     </div>
   );

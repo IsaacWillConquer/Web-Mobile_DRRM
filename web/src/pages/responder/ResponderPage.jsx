@@ -119,6 +119,17 @@ export default function ResponderPage() {
           "Rescue in Progress",
           user.uid,
         );
+        const report = reports[assignment.reportId];
+        if (report?.reporterId) {
+          await notificationsService
+            .createNotification({
+              userId: report.reporterId,
+              title: "Rescue in progress",
+              body: `A rescue team is responding to your ${report.disasterType ?? "incident"} report.`,
+              reportId: assignment.reportId,
+            })
+            .catch(() => {});
+        }
       }
       await logAction(user.uid, "assignment_start", { assignmentId: assignment.id });
     } catch (err) {

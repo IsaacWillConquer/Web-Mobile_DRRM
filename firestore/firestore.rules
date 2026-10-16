@@ -41,6 +41,31 @@ service cloud.firestore {
     function canDispatch() {
       return isDispatcher() || isAdmin();
     }
+    // PII (§8): a rescue team member may access a report's victim/contact details
+    // only once their team (users/{uid}.teamId) is assigned to that report.
+    function isAssignedToReport(reportId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId
+           == get(/databases/$(database)/documents/reports/$(reportId)).data.teamId;
+    }
+    // Residents may raise a fixed-shape "new report" ping to dispatchers/admins
+    // about their own report — nothing else.
+    function isDispatcherOrAdminUid(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.role in ['dispatcher', 'admin'];
+    }
+    function validNewReportPing() {
+      return isSignedIn()
+        && request.resource.data.keys().hasOnly(
+             ['type', 'reportId', 'userId', 'read', 'createdAt', 'title', 'body'])
+        && request.resource.data.type == 'new_report'
+        && request.resource.data.read == false
+        && request.resource.data.reportId is string
+        && request.resource.data.userId is string
+        && request.resource.data.get('title', '') is string
+        && request.resource.data.get('body', '') is string
+        && isDispatcherOrAdminUid(request.resource.data.userId)
+        && get(/databases/$(database)/documents/reports/$(request.resource.data.reportId)).data.reporterId == request.auth.uid;
+    }
     function validStatus(s) {
       return s in ['Submitted', 'Under Verification', 'Verified', 'Awaiting Assignment',
                    'Team Assigned', 'Rescue in Progress', 'Resolved', 'Closed',
@@ -88,15 +113,17 @@ service cloud.firestore {
       allow delete: if canDispatch();
     }
 
-    // Per-report victim/contact details (PII): reporters own their own; responders read.
+    // Per-report victim/contact details (PII): reporters own their own; staff read;
+    // a rescue team reads only once its team is assigned to the report (§8).
     match /reportContacts/{reportId} {
       allow read: if isSignedIn()
-                  && (isResponder()
+                  && (isStaff()
+                      || (isRescueTeam() && isAssignedToReport(reportId))
                       || get(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid);
       allow create: if isSignedIn()
                     && (isStaff()
                         || get(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid);
-      allow update: if isResponder();
+      allow update: if isStaff() || (isRescueTeam() && isAssignedToReport(reportId));
       allow delete: if canDispatch();
     }
 
@@ -121,10 +148,18 @@ service cloud.firestore {
     }
 
     // Notifications: a user reads/updates their own; responders create; staff delete.
+    // Residents may only create the fixed-shape "new_report" ping (see above).
     match /notifications/{id} {
       allow read, update: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isResponder();
+      allow create: if isResponder() || validNewReportPing();
       allow delete: if isStaff();
+    }
+
+    // Shared config (e.g. config/dispatch = list of dispatcher uids).
+    // Readable by any signed-in user so mobile can route pings; admin writes.
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // Audit log: append-only, uid cannot be spoofed; staff read.

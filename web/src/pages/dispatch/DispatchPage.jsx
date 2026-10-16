@@ -8,13 +8,16 @@ import * as assignmentsService from "../../core/services/assignmentsService";
 import * as clustersService from "../../core/services/clustersService";
 import { createNotification } from "../../core/services/notificationsService";
 import { getReportContact } from "../../core/services/reportContactsService";
+import { displayName, watchAllUsers } from "../../core/services/usersService";
 import { DISASTER_TYPES, PRIORITIES } from "../../config/appConfig";
 import ReportMap from "./ReportMap";
+import { findDuplicates } from "./duplicates";
 import { PRIORITY_COLORS, statusChip } from "./constants";
 import {
   Alert,
   Badge,
   Button,
+  Card,
   EmptyState,
   Field,
   Icon,
@@ -114,11 +117,30 @@ function useClusters() {
   return { clusters };
 }
 
+function useUsers() {
+  const [users, setUsers] = useState({});
+  useEffect(() => {
+    const unsub = watchAllUsers(
+      (rows) => {
+        const map = {};
+        rows.forEach((u) => {
+          map[u.uid] = u;
+        });
+        setUsers(map);
+      },
+      () => {},
+    );
+    return unsub;
+  }, []);
+  return users;
+}
+
 export default function DispatchPage() {
   const { user } = useAuth();
   const { reports, loading, error } = useReports();
   const { teams } = useTeams();
   const { clusters } = useClusters();
+  const users = useUsers();
 
   const [tab, setTab] = useState("reports");
   const [filter, setFilter] = useState("all");
@@ -128,6 +150,7 @@ export default function DispatchPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [actionError, setActionError] = useState("");
+  const [rejecting, setRejecting] = useState(null);
 
   const filtered = useMemo(
     () =>
@@ -150,6 +173,17 @@ export default function DispatchPage() {
     () => buildClusters(reports.filter((r) => ACTIVE_STATUSES.includes(r.status))).filter((c) => c.count >= 2),
     [reports],
   );
+  const duplicates = useMemo(() => findDuplicates(reports), [reports]);
+
+  const markDuplicate = (report) =>
+    run(async () => {
+      await reportsService.updateReportStatus(report.id, "Duplicate", user.uid);
+      await logAction(user.uid, "report_duplicate", {
+        reportId: report.id,
+        duplicateOf: duplicates.get(report.id)?.of ?? null,
+      });
+      setNotice("Report marked as duplicate.");
+    });
 
   async function run(fn) {
     setBusy(true);
@@ -183,17 +217,40 @@ export default function DispatchPage() {
       setNotice("Report verified.");
     });
 
-  const reject = (report) =>
+  const reject = (report, reason) =>
     run(async () => {
+      await reportsService.updateReport(report.id, { rejectionReason: reason });
       await reportsService.updateReportStatus(report.id, "Rejected", user.uid);
-      await notifyReporter(report, "Report rejected", `Your ${report.disasterType} report was rejected.`);
-      await logAction(user.uid, "report_reject", { reportId: report.id });
+      await notifyReporter(
+        report,
+        "Report rejected",
+        `Your ${report.disasterType} report was rejected. Reason: ${reason}`,
+      );
+      await logAction(user.uid, "report_reject", { reportId: report.id, reason });
       setNotice("Report rejected.");
+      setRejecting(null);
+    });
+
+  const close = (report) =>
+    run(async () => {
+      await reportsService.updateReportStatus(report.id, "Closed", user.uid);
+      await notifyReporter(
+        report,
+        "Report closed",
+        `Your ${report.disasterType} report has been closed. Thank you.`,
+      );
+      await logAction(user.uid, "report_close", { reportId: report.id });
+      setNotice("Report closed.");
     });
 
   const setPriority = (report, priority) =>
     run(async () => {
       await reportsService.updateReport(report.id, { priority });
+      await logAction(user.uid, "report_priority", {
+        reportId: report.id,
+        from: report.priority,
+        to: priority,
+      });
       await notifyReporter(
         report,
         "Priority updated",
@@ -336,12 +393,17 @@ export default function DispatchPage() {
             <ReportDetail
               report={selected}
               teams={teams}
+              userById={users}
+              duplicateOf={duplicates.get(selected.id) ?? null}
               busy={busy}
               onBack={() => setSelectedId(null)}
               onVerify={() => verify(selected)}
-              onReject={() => reject(selected)}
+              onReject={() => setRejecting(selected)}
+              onClose={() => close(selected)}
               onPriority={(p) => setPriority(selected, p)}
               onAssign={(team) => assign(selected, team)}
+              onMarkDuplicate={() => markDuplicate(selected)}
+              onOpenReport={setSelectedId}
             />
           ) : (
             <ReportList
@@ -350,6 +412,7 @@ export default function DispatchPage() {
               error={error}
               filter={filter}
               typeFilter={typeFilter}
+              duplicates={duplicates}
               onFilter={setFilter}
               onTypeFilter={setTypeFilter}
               onSelect={setSelectedId}
@@ -357,6 +420,15 @@ export default function DispatchPage() {
           )}
         </aside>
       </div>
+
+      {rejecting ? (
+        <ReasonDialog
+          report={rejecting}
+          busy={busy}
+          onClose={() => setRejecting(null)}
+          onSubmit={(reason) => reject(rejecting, reason)}
+        />
+      ) : null}
     </AppShell>
   );
 }
@@ -367,6 +439,7 @@ function ReportList({
   error,
   filter,
   typeFilter,
+  duplicates,
   onFilter,
   onTypeFilter,
   onSelect,
@@ -428,7 +501,14 @@ function ReportList({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-slate-800">{r.disasterType}</span>
-                    <span className={statusChip(r.status)}>{r.status}</span>
+                    <div className="flex items-center gap-1">
+                      {duplicates?.has(r.id) ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                          Possible duplicate
+                        </span>
+                      ) : null}
+                      <span className={statusChip(r.status)}>{r.status}</span>
+                    </div>
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.description}</p>
                   <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
@@ -448,7 +528,21 @@ function ReportList({
   );
 }
 
-function ReportDetail({ report, teams, busy, onBack, onVerify, onReject, onPriority, onAssign }) {
+function ReportDetail({
+  report,
+  teams,
+  userById,
+  duplicateOf,
+  busy,
+  onBack,
+  onVerify,
+  onReject,
+  onClose,
+  onPriority,
+  onAssign,
+  onMarkDuplicate,
+  onOpenReport,
+}) {
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [contact, setContact] = useState(null);
 
@@ -463,6 +557,7 @@ function ReportDetail({ report, teams, busy, onBack, onVerify, onReject, onPrior
   }, [report.id]);
 
   const assignable = report.status === "Verified" || report.status === "Awaiting Assignment";
+  const reporter = userById?.[report.reporterId];
 
   return (
     <div className="flex-1 overflow-y-auto p-4">
@@ -479,7 +574,7 @@ function ReportDetail({ report, teams, busy, onBack, onVerify, onReject, onPrior
       </div>
 
       <dl className="mt-4 space-y-2 text-sm">
-        <Row label="Reporter" value={report.reporterId} />
+        <Row label="Reporter" value={reporter ? displayName(reporter) : report.reporterId} />
         <Row label="For" value={report.onBehalfOf === "other" ? "Someone else" : "Myself"} />
         <Row label="People affected" value={report.peopleAffected ?? "—"} />
         <Row
@@ -503,6 +598,37 @@ function ReportDetail({ report, teams, busy, onBack, onVerify, onReject, onPrior
           ))}
         </div>
       ) : null}
+
+      {duplicateOf ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 p-3 text-sm ring-1 ring-inset ring-amber-600/15">
+          <p className="text-amber-900">
+            <span className="font-semibold">Possible duplicate</span> of a nearby{" "}
+            {duplicateOf.type ?? "report"} submitted within 24h.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => onOpenReport(duplicateOf.of)}>
+              View original
+            </Button>
+            <Button size="sm" variant="secondary" onClick={onMarkDuplicate} disabled={busy}>
+              Mark as duplicate
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {report.rejectionReason ? (
+        <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm ring-1 ring-inset ring-red-600/15">
+          <p className="font-semibold text-red-700">Rejection reason</p>
+          <p className="mt-0.5 text-red-600">{report.rejectionReason}</p>
+        </div>
+      ) : null}
+
+      <div className="mt-5">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Status timeline
+        </p>
+        <HistoryTimeline history={report.history} userById={userById} />
+      </div>
 
       {contact ? (
         <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm ring-1 ring-inset ring-slate-900/5">
@@ -542,9 +668,20 @@ function ReportDetail({ report, teams, busy, onBack, onVerify, onReject, onPrior
           <Icon name="check" className="h-4 w-4" />
           Verify
         </Button>
-        <Button variant="secondary" onClick={onReject} disabled={busy} className="border-red-200 text-red-600 hover:bg-red-50">
+        <Button
+          variant="secondary"
+          onClick={onReject}
+          disabled={busy}
+          className="border-red-200 text-red-600 hover:bg-red-50"
+        >
           Reject
         </Button>
+        {report.status === "Resolved" ? (
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            <Icon name="check" className="h-4 w-4" />
+            Close incident
+          </Button>
+        ) : null}
       </div>
 
       <div className="mt-5 border-t border-slate-200 pt-4">
@@ -698,6 +835,124 @@ function ClustersPanel({ suggested, clusters, reportById, teams, busy, onAssign 
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+// `history[].at` is an epoch-ms number (web) or an ISO string (mobile).
+function parseHistoryDate(at) {
+  if (at == null) return null;
+  if (typeof at?.toDate === "function") return at.toDate();
+  if (typeof at === "number") {
+    const date = new Date(at);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof at === "string" && at.trim() !== "") {
+    const numeric = Number(at);
+    const date = Number.isFinite(numeric) ? new Date(numeric) : new Date(at);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+function HistoryTimeline({ history, userById }) {
+  const entries = useMemo(
+    () =>
+      (history ?? [])
+        .map((entry) => ({ ...entry, _date: parseHistoryDate(entry.at) }))
+        .sort(
+          (a, b) =>
+            (a._date?.getTime() ?? Number.POSITIVE_INFINITY) -
+            (b._date?.getTime() ?? Number.POSITIVE_INFINITY),
+        ),
+    [history],
+  );
+
+  if (entries.length === 0) {
+    return <p className="text-sm text-slate-400">No status history recorded yet.</p>;
+  }
+
+  return (
+    <ol className="relative space-y-4 border-l border-slate-200 pl-5">
+      {entries.map((entry, index) => {
+        const actor = userById?.[entry.by];
+        const isLatest = index === entries.length - 1;
+        return (
+          <li key={`${entry.status}-${index}`} className="relative">
+            <span
+              className={`absolute -left-[25px] top-1.5 h-2.5 w-2.5 rounded-full ring-4 ring-white ${
+                isLatest ? "bg-blue-600" : "bg-slate-300"
+              }`}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={statusChip(entry.status)}>{entry.status}</span>
+              {isLatest ? <Badge className="bg-blue-50 text-blue-700">Current</Badge> : null}
+            </div>
+            <p className="mt-0.5 text-xs text-slate-400">
+              {entry._date ? entry._date.toLocaleString() : "—"}
+              {actor
+                ? ` · by ${displayName(actor)}`
+                : entry.by
+                  ? ` · ${String(entry.by).slice(0, 8)}…`
+                  : ""}
+            </p>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ReasonDialog({ report, busy, onClose, onSubmit }) {
+  const [reason, setReason] = useState("");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+      <Card className="w-full max-w-md p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Reject report</h3>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {report.disasterType} · reason is shared with the reporter.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
+          >
+            <Icon name="x" className="h-5 w-5" />
+          </button>
+        </div>
+        <form
+          className="mt-5 space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSubmit(reason.trim());
+          }}
+        >
+          <Field label="Reason" hint="Shown to the reporter in their notifications.">
+            <textarea
+              required
+              minLength={3}
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Duplicate of an existing verified report."
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15"
+            />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="danger" disabled={busy}>
+              {busy ? <Spinner className="h-4 w-4" /> : <Icon name="x" className="h-4 w-4" />}
+              Reject report
+            </Button>
+          </div>
+        </form>
+      </Card>
     </div>
   );
 }

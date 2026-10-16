@@ -7,10 +7,11 @@ import {
   deleteStaff,
   displayName,
   setStaffActive,
+  syncDispatcherConfig,
   updateStaff,
   watchStaff,
 } from "../../core/services/usersService";
-import { ROLE_LABELS, STAFF_ROLES } from "../../config/appConfig";
+import { ROLE_LABELS, ROLES, STAFF_ROLES } from "../../config/appConfig";
 import {
   Alert,
   Badge,
@@ -48,6 +49,15 @@ export default function StaffPage() {
     );
     return unsubscribe;
   }, []);
+
+  // Keep config/dispatch (the new-report ping targets) in sync with staff roles.
+  useEffect(() => {
+    if (!user) return;
+    const uids = staff
+      .filter((m) => m.role === ROLES.dispatcher || m.role === ROLES.admin)
+      .map((m) => m.uid);
+    syncDispatcherConfig(uids).catch(() => {});
+  }, [staff, user]);
 
   function updateForm(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));

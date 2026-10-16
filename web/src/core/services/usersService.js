@@ -92,3 +92,12 @@ export function setStaffActive(uid, active) {
 export function deleteStaff(uid) {
   return deleteDoc(userDoc(uid));
 }
+
+// Maintains the shared dispatcher list that residents use to raise
+// fixed-shape "new_report" pings (see Firestore rules).
+export async function syncDispatcherConfig(uids) {
+  await setDoc(doc(db, "config", "dispatch"), {
+    dispatcherUids: uids,
+    updatedAt: serverTimestamp(),
+  });
+}

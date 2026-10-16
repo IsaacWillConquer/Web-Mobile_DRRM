@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../core/auth/authContext";
 import { logoutUser } from "../core/auth/authService";
+import { watchReports } from "../core/services/reportsService";
 import { logAction } from "../core/audit/logAction";
 import { APP_NAME, APP_TAGLINE, ROLE_LABELS, ROLES } from "../config/appConfig";
 import { Icon } from "./ui";
@@ -21,6 +23,7 @@ const NAV = [
     roles: [ROLES.rescueTeam, ROLES.dispatcher, ROLES.admin],
   },
   { to: "/dmo", label: "Analytics", icon: "analytics", roles: [ROLES.dmo, ROLES.admin] },
+  { to: "/admin/activity", label: "Activity", icon: "activity", roles: [ROLES.admin, ROLES.dmo] },
   { to: "/admin/staff", label: "Staff", icon: "staff", roles: [ROLES.admin] },
 ];
 
@@ -34,6 +37,16 @@ function initials(name, email) {
 export default function AppShell({ title, subtitle, actions, children, wide = false }) {
   const { user, profile, role } = useAuth();
   const navigate = useNavigate();
+  const [attention, setAttention] = useState(0);
+
+  useEffect(() => {
+    const unsub = watchReports(
+      { status: "Submitted" },
+      (snap) => setAttention(snap.size),
+      () => {},
+    );
+    return unsub;
+  }, []);
 
   const items = NAV.filter((item) => !item.roles || (role && item.roles.includes(role)));
 
@@ -96,6 +109,14 @@ export default function AppShell({ title, subtitle, actions, children, wide = fa
               >
                 <Icon name={item.icon} className="h-4 w-4" />
                 {item.label}
+                {item.to === "/dispatch" && attention > 0 ? (
+                  <span
+                    title={`${attention} report${attention > 1 ? "s" : ""} awaiting verification`}
+                    className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white"
+                  >
+                    {attention > 9 ? "9+" : attention}
+                  </span>
+                ) : null}
               </NavLink>
             ))}
           </div>

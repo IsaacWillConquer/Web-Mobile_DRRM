@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import * as reportsService from "../../core/services/reportsService";
+import * as rescueRecordsService from "../../core/services/rescueRecordsService";
 import { watchAllUsers } from "../../core/services/usersService";
 import { Badge, Button, Card, EmptyState, Icon, Spinner } from "../../components/ui";
 import {
@@ -74,13 +75,14 @@ function formatDuration(ms) {
   return `${(hours / 24).toFixed(1)}d`;
 }
 
-function toCsv(rows) {
+function toCsv(rows, rescuedByReport = {}) {
   const headers = [
     "id",
     "disasterType",
     "status",
     "priority",
     "peopleAffected",
+    "peopleRescued",
     "area",
     "lat",
     "lng",
@@ -96,6 +98,7 @@ function toCsv(rows) {
         r.status,
         r.priority,
         r.peopleAffected,
+        rescuedByReport[r.id] ?? "",
         r._area,
         r.lat,
         r.lng,
@@ -111,6 +114,7 @@ function toCsv(rows) {
 export default function DmoPage() {
   const [reports, setReports] = useState([]);
   const [users, setUsers] = useState([]);
+  const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [range, setRange] = useState("30d");
@@ -129,9 +133,15 @@ export default function DmoPage() {
       },
     );
     const unsubU = watchAllUsers((rows) => setUsers(rows), () => {});
+    const unsubRec = rescueRecordsService.watchRescueRecords(
+      {},
+      (snap) => setRecords(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => {},
+    );
     return () => {
       unsubR();
       unsubU();
+      unsubRec();
     };
   }, []);
 
@@ -245,6 +255,22 @@ export default function DmoPage() {
     });
     const average = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
+    const scopedRecords = rangeStart
+      ? records.filter((rec) => {
+          const created = tsToDate(rec.createdAt);
+          return created && created >= rangeStart;
+        })
+      : records;
+    const rescuedByReport = {};
+    let peopleRescued = 0;
+    scopedRecords.forEach((rec) => {
+      const rescued = Number(rec.peopleRescued) || 0;
+      peopleRescued += rescued;
+      if (rec.reportId) {
+        rescuedByReport[rec.reportId] = (rescuedByReport[rec.reportId] ?? 0) + rescued;
+      }
+    });
+
     return {
       total: scoped.length,
       open,
@@ -254,16 +280,25 @@ export default function DmoPage() {
       resolveRate: scoped.length ? Math.round((resolved / scoped.length) * 100) : 0,
       avgVerify: average(verifyDurations),
       avgResolve: average(resolveDurations),
+      rescueOps: scopedRecords.length,
+      peopleRescued,
+      rescuedByReport,
+      recentRecords: scopedRecords
+        .map((rec) => ({ ...rec, _date: tsToDate(rec.createdAt) }))
+        .sort((a, b) => (b._date?.getTime() ?? 0) - (a._date?.getTime() ?? 0))
+        .slice(0, 10),
       statusData,
       priorityData,
       typeData,
       areaData,
       trendData,
     };
-  }, [scoped, range]);
+  }, [scoped, range, rangeStart, records]);
 
   function exportCsv() {
-    const blob = new Blob([toCsv(scoped)], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([toCsv(scoped, stats.rescuedByReport)], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -284,6 +319,14 @@ export default function DmoPage() {
       .map(
         (a) =>
           `<tr><td>${a.label}</td><td class="num">${a.value}</td><td class="num">${a.people}</td></tr>`,
+      )
+      .join("");
+    const rescues = stats.recentRecords
+      .map(
+        (rec) =>
+          `<tr><td>${rec._date ? rec._date.toLocaleString() : "—"}</td><td class="num">${
+            rec.peopleRescued ?? 0
+          }</td><td>${String(rec.notes ?? "").replace(/</g, "&lt;")}</td></tr>`,
       )
       .join("");
     const win = window.open("", "_blank", "width=900,height=1000");
@@ -321,6 +364,8 @@ export default function DmoPage() {
       <h2>Incidents by type</h2><table>${byType}</table>
       <h2>Reports by area</h2>
       <table><tr><td><b>Area</b></td><td class="num"><b>Reports</b></td><td class="num"><b>People</b></td></tr>${byArea}</table>
+      <h2>Rescue operations (recent)</h2>
+      <table><tr><td><b>When</b></td><td class="num"><b>People rescued</b></td><td><b>Notes</b></td></tr>${rescues}</table>
       </body></html>`);
     win.document.close();
     win.focus();
@@ -418,6 +463,18 @@ export default function DmoPage() {
               icon="alert"
             />
             <Kpi
+              label="Rescue operations"
+              value={stats.rescueOps}
+              tone="text-sky-600"
+              icon="responder"
+            />
+            <Kpi
+              label="People rescued"
+              value={stats.peopleRescued}
+              tone="text-emerald-600"
+              icon="check"
+            />
+            <Kpi
               label="Avg time to verify"
               value={formatDuration(stats.avgVerify)}
               tone="text-indigo-600"
@@ -487,6 +544,47 @@ export default function DmoPage() {
               )}
             </Card>
           </div>
+
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <h3 className="font-semibold text-slate-900">Recent rescue operations</h3>
+              <span className="text-xs text-slate-400">
+                {stats.rescueOps} in range · {stats.peopleRescued} rescued
+              </span>
+            </div>
+            {stats.recentRecords.length === 0 ? (
+              <p className="px-6 py-6 text-sm text-slate-500">
+                No rescue outcomes recorded in this range.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-6 py-3 font-medium">When</th>
+                      <th className="px-6 py-3 font-medium">People rescued</th>
+                      <th className="px-6 py-3 font-medium">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {stats.recentRecords.map((rec) => (
+                      <tr key={rec.id}>
+                        <td className="whitespace-nowrap px-6 py-3 text-slate-500">
+                          {rec._date ? rec._date.toLocaleString() : "—"}
+                        </td>
+                        <td className="px-6 py-3 font-semibold tabular-nums text-slate-800">
+                          {rec.peopleRescued ?? 0}
+                        </td>
+                        <td className="max-w-md truncate px-6 py-3 text-slate-600">
+                          {rec.notes || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
 
           <Card className="overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
