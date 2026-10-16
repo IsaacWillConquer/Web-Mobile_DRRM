@@ -4,6 +4,7 @@ import { logoutUser } from "../core/auth/authService";
 import { logAction } from "../core/audit/logAction";
 import { APP_NAME, APP_TAGLINE, ROLE_LABELS, ROLES } from "../config/appConfig";
 import { Icon } from "./ui";
+import NotificationBell from "./NotificationBell";
 
 const NAV = [
   { to: "/dashboard", label: "Overview", icon: "overview", roles: null },
@@ -65,6 +66,7 @@ export default function AppShell({ title, subtitle, actions, children, wide = fa
                 {ROLE_LABELS[role] ?? "No role"}
               </span>
             </div>
+            <NotificationBell />
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
               {initials(profile?.name, user?.email)}
             </span>

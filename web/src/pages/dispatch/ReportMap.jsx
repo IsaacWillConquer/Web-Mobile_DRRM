@@ -1,7 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { CircleMarker, MapContainer, TileLayer, Tooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { PRIORITY_COLORS } from "./constants";
+
+const DENSITY_COLORS = {
+  high: "#dc2626",
+  medium: "#d97706",
+  low: "#2563eb",
+};
 
 function Recenter({ position }) {
   const map = useMap();
@@ -11,12 +17,38 @@ function Recenter({ position }) {
   return null;
 }
 
-export default function ReportMap({ reports, selectedId, onSelect }) {
+function densityCells(reports) {
+  const cells = {};
+  reports.forEach((r) => {
+    if (r.lat == null || r.lng == null) return;
+    const key = `${r.lat.toFixed(2)},${r.lng.toFixed(2)}`;
+    if (!cells[key]) {
+      cells[key] = { key, lat: 0, lng: 0, count: 0, priority: "low" };
+    }
+    const cell = cells[key];
+    cell.lat += r.lat;
+    cell.lng += r.lng;
+    cell.count += 1;
+    if (r.priority === "high" || (r.priority === "medium" && cell.priority !== "high")) {
+      cell.priority = r.priority;
+    }
+  });
+  return Object.values(cells).map((c) => ({
+    ...c,
+    lat: c.lat / c.count,
+    lng: c.lng / c.count,
+  }));
+}
+
+export default function ReportMap({ reports, selectedId, onSelect, mode = "pins" }) {
   const selected = reports.find((r) => r.id === selectedId);
   const position =
     selected && selected.lat != null && selected.lng != null
       ? [selected.lat, selected.lng]
       : null;
+
+  const cells = useMemo(() => densityCells(reports), [reports]);
+  const maxCount = Math.max(1, ...cells.map((c) => c.count));
 
   return (
     <MapContainer
@@ -30,30 +62,47 @@ export default function ReportMap({ reports, selectedId, onSelect }) {
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <Recenter position={position} />
-      {reports.map(
-        (report) =>
-          report.lat != null &&
-          report.lng != null && (
+
+      {mode === "density"
+        ? cells.map((cell) => (
             <CircleMarker
-              key={report.id}
-              center={[report.lat, report.lng]}
-              radius={selectedId === report.id ? 10 : 7}
+              key={cell.key}
+              center={[cell.lat, cell.lng]}
+              radius={12 + (cell.count / maxCount) * 24}
               pathOptions={{
                 color: "#ffffff",
-                weight: 2,
-                fillColor: PRIORITY_COLORS[report.priority] ?? "#64748B",
-                fillOpacity: 1,
+                weight: 1,
+                fillColor: DENSITY_COLORS[cell.priority] ?? "#64748B",
+                fillOpacity: 0.35,
               }}
-              eventHandlers={{ click: () => onSelect(report.id) }}
             >
-              <Tooltip>
-                {report.disasterType} · {report.status}
-                <br />
-                Priority: {report.priority ?? "—"}
-              </Tooltip>
+              <Tooltip>{`${cell.count} report${cell.count > 1 ? "s" : ""} nearby`}</Tooltip>
             </CircleMarker>
-          ),
-      )}
+          ))
+        : reports.map(
+            (report) =>
+              report.lat != null &&
+              report.lng != null && (
+                <CircleMarker
+                  key={report.id}
+                  center={[report.lat, report.lng]}
+                  radius={selectedId === report.id ? 10 : 7}
+                  pathOptions={{
+                    color: "#ffffff",
+                    weight: 2,
+                    fillColor: PRIORITY_COLORS[report.priority] ?? "#64748B",
+                    fillOpacity: 1,
+                  }}
+                  eventHandlers={{ click: () => onSelect(report.id) }}
+                >
+                  <Tooltip>
+                    {report.disasterType} · {report.status}
+                    <br />
+                    Priority: {report.priority ?? "—"}
+                  </Tooltip>
+                </CircleMarker>
+              ),
+          )}
     </MapContainer>
   );
 }

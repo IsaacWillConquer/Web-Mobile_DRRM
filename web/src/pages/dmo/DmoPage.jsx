@@ -65,6 +65,15 @@ function formatDateTime(ts) {
   return d ? d.toLocaleString() : "—";
 }
 
+function formatDuration(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
+  const minutes = ms / 60000;
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${hours.toFixed(1)}h`;
+  return `${(hours / 24).toFixed(1)}d`;
+}
+
 function toCsv(rows) {
   const headers = [
     "id",
@@ -223,6 +232,19 @@ export default function DmoPage() {
     const open = scoped.filter((r) => OPEN_STATUSES.includes(r.status)).length;
     const resolved = byStatus.Resolved ?? 0;
 
+    const verifyDurations = [];
+    const resolveDurations = [];
+    scoped.forEach((r) => {
+      const created = r._date?.getTime();
+      if (created == null) return;
+      const history = r.history ?? [];
+      const verified = history.find((h) => h.status === "Verified")?.at;
+      const resolvedAt = history.find((h) => h.status === "Resolved")?.at;
+      if (verified) verifyDurations.push(verified - created);
+      if (resolvedAt) resolveDurations.push(resolvedAt - created);
+    });
+    const average = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+
     return {
       total: scoped.length,
       open,
@@ -230,6 +252,8 @@ export default function DmoPage() {
       people,
       reporters: reporters.size,
       resolveRate: scoped.length ? Math.round((resolved / scoped.length) * 100) : 0,
+      avgVerify: average(verifyDurations),
+      avgResolve: average(resolveDurations),
       statusData,
       priorityData,
       typeData,
@@ -248,11 +272,70 @@ export default function DmoPage() {
     URL.revokeObjectURL(url);
   }
 
+  function exportPdf() {
+    const byStatus = stats.statusData
+      .map((s) => `<tr><td>${s.label}</td><td class="num">${s.value}</td></tr>`)
+      .join("");
+    const byType = stats.typeData
+      .map((s) => `<tr><td>${s.label}</td><td class="num">${s.value}</td></tr>`)
+      .join("");
+    const byArea = stats.areaData
+      .slice(0, 12)
+      .map(
+        (a) =>
+          `<tr><td>${a.label}</td><td class="num">${a.value}</td><td class="num">${a.people}</td></tr>`,
+      )
+      .join("");
+    const win = window.open("", "_blank", "width=900,height=1000");
+    if (!win) return;
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>DRRM Operational Report</title>
+      <style>
+        body{font-family:system-ui,Segoe UI,Roboto,sans-serif;color:#0f172a;padding:32px;}
+        h1{font-size:20px;margin:0 0 4px;}
+        h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:24px 0 8px;}
+        .muted{color:#64748b;font-size:12px;margin:0 0 16px;}
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        td{padding:6px 8px;border-bottom:1px solid #e2e8f0;}
+        .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;}
+        .grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;}
+        .kpi{border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:150px;}
+        .kpi .v{font-size:22px;font-weight:700;}
+        .kpi .l{font-size:11px;text-transform:uppercase;color:#64748b;}
+      </style></head><body>
+      <h1>DRRM — Operational Report</h1>
+      <p class="muted">Generated ${new Date().toLocaleString()} · Range: ${
+        range === "all" ? "All time" : range === "7d" ? "Last 7 days" : "Last 30 days"
+      } · Type: ${typeFilter === "all" ? "All" : typeFilter}</p>
+      <div class="grid">
+        <div class="kpi"><div class="v">${stats.total}</div><div class="l">Reports</div></div>
+        <div class="kpi"><div class="v">${stats.reporters}</div><div class="l">Reporters</div></div>
+        <div class="kpi"><div class="v">${stats.open}</div><div class="l">Open</div></div>
+        <div class="kpi"><div class="v">${stats.resolved}</div><div class="l">Resolved</div></div>
+        <div class="kpi"><div class="v">${stats.resolveRate}%</div><div class="l">Resolve rate</div></div>
+        <div class="kpi"><div class="v">${stats.people}</div><div class="l">People affected</div></div>
+        <div class="kpi"><div class="v">${formatDuration(stats.avgVerify)}</div><div class="l">Avg time to verify</div></div>
+        <div class="kpi"><div class="v">${formatDuration(stats.avgResolve)}</div><div class="l">Avg time to resolve</div></div>
+      </div>
+      <h2>Reports by status</h2><table>${byStatus}</table>
+      <h2>Incidents by type</h2><table>${byType}</table>
+      <h2>Reports by area</h2>
+      <table><tr><td><b>Area</b></td><td class="num"><b>Reports</b></td><td class="num"><b>People</b></td></tr>${byArea}</table>
+      </body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 250);
+  }
+
   const actions = (
     <>
+      <Button variant="secondary" onClick={exportPdf} disabled={scoped.length === 0}>
+        <Icon name="download" className="h-4 w-4" />
+        PDF
+      </Button>
       <Button variant="secondary" onClick={exportCsv} disabled={scoped.length === 0}>
         <Icon name="download" className="h-4 w-4" />
-        Export CSV
+        CSV
       </Button>
     </>
   );
@@ -316,7 +399,7 @@ export default function DmoPage() {
         />
       ) : (
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Kpi label="Reports" value={stats.total} tone="text-slate-900" icon="inbox" />
             <Kpi label="Reporters" value={stats.reporters} tone="text-blue-700" icon="staff" />
             <Kpi label="Open" value={stats.open} tone="text-amber-600" icon="clock" />
@@ -333,6 +416,18 @@ export default function DmoPage() {
               value={stats.people}
               tone="text-red-600"
               icon="alert"
+            />
+            <Kpi
+              label="Avg time to verify"
+              value={formatDuration(stats.avgVerify)}
+              tone="text-indigo-600"
+              icon="clock"
+            />
+            <Kpi
+              label="Avg time to resolve"
+              value={formatDuration(stats.avgResolve)}
+              tone="text-violet-600"
+              icon="check"
             />
           </div>
 
