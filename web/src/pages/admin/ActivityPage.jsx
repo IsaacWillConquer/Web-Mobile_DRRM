@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../components/AppShell";
 import { watchLogs } from "../../core/services/logsService";
 import { watchAllUsers } from "../../core/services/usersService";
-import { Button, Card, EmptyState, Icon, Input, Spinner } from "../../components/ui";
+import { Button, Card, EmptyState, Icon, Input, Pagination, Spinner } from "../../components/ui";
+
+const PAGE_SIZE = 15;
 
 const ACTION_LABELS = {
   auth_login: "Signed in",
@@ -63,6 +65,7 @@ export default function ActivityPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     const unsubLogs = watchLogs(
@@ -114,6 +117,10 @@ export default function ActivityPage() {
       .map((l) => ({ ...l, _actor: users[l.uid]?.name ?? users[l.uid]?.email ?? l.uid }));
   }, [logs, users, search, actionFilter]);
 
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pagedRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   function exportCsv() {
     const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -139,14 +146,20 @@ export default function ActivityPage() {
         <div className="relative w-full sm:w-72">
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             placeholder="Search actor, action, details…"
             className="mt-0"
           />
         </div>
         <select
           value={actionFilter}
-          onChange={(e) => setActionFilter(e.target.value)}
+          onChange={(e) => {
+            setActionFilter(e.target.value);
+            setPage(1);
+          }}
           className="h-[38px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-600"
         >
           {actions.map((action) => (
@@ -184,7 +197,7 @@ export default function ActivityPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((row) => (
+                {pagedRows.map((row) => (
                   <tr key={row.id}>
                     <td className="whitespace-nowrap px-5 py-3 text-slate-500">
                       {formatDate(row.createdAt)}
@@ -203,6 +216,12 @@ export default function ActivityPage() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            total={rows.length}
+            onPageChange={setPage}
+          />
         </Card>
       )}
     </AppShell>

@@ -7,6 +7,8 @@ const BUTTON_VARIANTS = {
     "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 focus-visible:outline-slate-400",
   danger:
     "bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600 shadow-sm shadow-red-900/10",
+  dangerOutline:
+    "bg-white text-red-600 border border-red-300 hover:bg-red-50 hover:border-red-400 focus-visible:outline-red-500",
   ghost: "text-slate-600 hover:bg-slate-100 focus-visible:outline-slate-300",
   success:
     "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:outline-emerald-600 shadow-sm shadow-emerald-900/10",
@@ -29,13 +31,48 @@ export function Button({
     <button
       type={type}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none disabled:opacity-100",
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
         className,
       )}
       {...props}
     />
+  );
+}
+
+export function Pagination({ page, pageCount, total, onPageChange, className }) {
+  if (!total) return null;
+  const safeCount = Math.max(1, pageCount);
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 text-sm",
+        className,
+      )}
+    >
+      <span className="text-slate-500">
+        Page {page} of {safeCount} · {total} {total === 1 ? "entry" : "entries"}
+      </span>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+        >
+          Prev
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={page >= safeCount}
+          onClick={() => onPageChange(page + 1)}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
   );
 }
 

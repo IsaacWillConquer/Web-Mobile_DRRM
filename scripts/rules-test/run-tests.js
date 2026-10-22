@@ -48,6 +48,9 @@ async function seed(admin) {
     dmo1: { role: "dmo", active: true },
     rt1: { role: "rescueTeam", active: true, teamId: "teamA" },
     rt2: { role: "rescueTeam", active: true, teamId: "teamB" },
+    // Dedicated, unmutated responder used by the teamId-assignment tests
+    // (rt2's role is changed by an earlier "admin updates staff role" test).
+    rt3: { role: "rescueTeam", active: true },
     admin1: { role: "admin", active: true },
     off1: { role: "dispatcher", active: false },
   };
@@ -260,6 +263,15 @@ async function run() {
   ));
   await check("dispatcher cannot manage users anymore", deny(
     dispatcher().collection("users").doc("rt2").update({ role: "resident" }),
+  ));
+  await check("dispatch staff assign a rescue responder's teamId", allow(
+    dispatcher().collection("users").doc("rt3").update({ teamId: "teamA" }),
+  ));
+  await check("dispatcher cannot change a rescue responder's role", deny(
+    dispatcher().collection("users").doc("rt3").update({ role: "dispatcher" }),
+  ));
+  await check("dispatcher cannot set a resident's teamId", deny(
+    dispatcher().collection("users").doc("res2").update({ teamId: "teamA" }),
   ));
 
   // ---------- FR-13: audit log ----------

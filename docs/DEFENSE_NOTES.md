@@ -59,9 +59,10 @@ enforced in Firestore rules, not app code.
 4. **Geospatial is approximate.** Duplicate detection and clustering are grid-based; two
    reports in the same cell aren't necessarily duplicates — that's why dispatch confirms
    before marking `Duplicate`.
-5. **`teamId` is set out-of-band.** Rescue-team PII access depends on `users/{uid}.teamId`,
-   which the admin sets manually (console) — no UI yet. A rescue team without `teamId`
-   cannot see contact PII even when assigned.
+5. **`teamId` is assignable from the web now.** Rescue-team PII access depends on
+   `users/{uid}.teamId`; dispatch staff assign responders to teams in the **Teams** tab
+   (which writes both `teams.memberUids` and the responder's `teamId`), so the manual console
+   step is gone. A rescue team without `teamId` still cannot see contact PII even when assigned.
 6. **No file-type validation server-side for images** (Cloudinary unsigned upload); size/type
    checks are client-side (R3-lite).
 7. **Duplicate detection ignores description text** — it keys on type + location + time only.
@@ -102,8 +103,8 @@ enforced in Firestore rules, not app code.
 
 ## 7. Test evidence
 
-- `scripts/rules-test/` — Firestore emulator security suite, **50/50 passing** (roles, PII
-  gates, ping shape, report field validation, log immutability).
+- `scripts/rules-test/` — Firestore emulator security suite, **53/53 passing** (roles, PII
+  gates, teamId scoping, ping shape, report field validation, log immutability).
 - Web: `npm run lint` + `npm run build` green at last check.
 - Mobile: `flutter analyze` clean at last check; 12 province/signal resolver tests.
 - Deployed: rules + hosting live on project `drrm-app` (drrm-app.web.app).
@@ -112,6 +113,7 @@ enforced in Firestore rules, not app code.
 
 1. FCM push via a Cloud Function triggered on `notifications` create.
 2. Offline-first queueing + outbound SMS fallback (P4b).
-3. Team management UI for `teamId` (remove the manual console step).
-4. Signed Cloudinary uploads / server-side media policy.
-5. Automated Firestore export schedule (backup runbook).
+3. Signed Cloudinary uploads / server-side media policy.
+4. Automated Firestore export schedule (backup runbook).
+
+*(Team management UI for `teamId` — the manual console step — is now done in the web Teams tab.)*

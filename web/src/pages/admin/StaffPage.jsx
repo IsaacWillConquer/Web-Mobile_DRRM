@@ -20,11 +20,13 @@ import {
   Field,
   Icon,
   Input,
+  Pagination,
   Select,
   Spinner,
 } from "../../components/ui";
 
 const EMPTY_FORM = { name: "", email: "", password: "", role: "dispatcher" };
+const PAGE_SIZE = 10;
 
 export default function StaffPage() {
   const { user } = useAuth();
@@ -35,6 +37,7 @@ export default function StaffPage() {
   const [busyUid, setBusyUid] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     const unsubscribe = watchStaff(
@@ -62,6 +65,10 @@ export default function StaffPage() {
   function updateForm(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
+
+  const pageCount = Math.max(1, Math.ceil(staff.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pagedStaff = staff.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -223,6 +230,7 @@ export default function StaffPage() {
                 No staff accounts yet.
               </div>
             ) : (
+              <>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -235,7 +243,7 @@ export default function StaffPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {staff.map((member) => {
+                    {pagedStaff.map((member) => {
                       const isSelf = member.uid === user?.uid;
                       const isBusy = busyUid === member.uid;
                       return (
@@ -299,6 +307,13 @@ export default function StaffPage() {
                   </tbody>
                 </table>
               </div>
+              <Pagination
+                page={currentPage}
+                pageCount={pageCount}
+                total={staff.length}
+                onPageChange={setPage}
+              />
+              </>
             )}
           </Card>
 

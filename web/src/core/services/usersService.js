@@ -87,6 +87,12 @@ export function setStaffActive(uid, active) {
   return updateStaff(uid, { active });
 }
 
+// Assigns (or clears) a rescue team member's team. Drives PII access: a rescue
+// team can only read `reportContacts` for reports assigned to its `teamId`.
+export function setUserTeam(uid, teamId) {
+  return updateStaff(uid, { teamId: teamId ?? null });
+}
+
 // Removes the Firestore profile. The Firebase Auth account itself remains;
 // delete it from the console if needed.
 export function deleteStaff(uid) {

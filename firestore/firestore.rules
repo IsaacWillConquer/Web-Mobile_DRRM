@@ -87,9 +87,17 @@ service cloud.firestore {
                         && request.resource.data.role == 'resident'
                         && request.resource.data.active == true)
                     || isAdmin();
+      // Self-service profile edits (never role/active); admins manage anyone; and
+      // dispatch staff may assign a rescue responder to a team by setting teamId
+      // ONLY (nothing else changes) — this is what drives assigned-team PII access.
       allow update: if (request.auth.uid == uid
                         && !changedKeys().hasAny(['role', 'active']))
-                    || (isAdmin() && request.auth.uid != uid);
+                    || (isAdmin() && request.auth.uid != uid)
+                    || (canDispatch()
+                        && request.auth.uid != uid
+                        && get(/databases/$(database)/documents/users/$(uid)).data.role == 'rescueTeam'
+                        && request.resource.data.role == 'rescueTeam'
+                        && changedKeys().hasOnly(['teamId', 'updatedAt']));
       allow delete: if isAdmin() && request.auth.uid != uid;
     }
 

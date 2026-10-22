@@ -1,6 +1,5 @@
 import {
   addDoc,
-  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -8,6 +7,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -57,11 +57,21 @@ export function watchReport(id, onData, onError) {
   return onSnapshot(reportDoc(id), onData, onError);
 }
 
+// Appends a status change to `history[]`, skipping the append when the report
+// is already in that status (guards against repeated verify/assign clicks
+// producing duplicate timeline entries). Uses a transaction so concurrent
+// writers don't clobber each other's history.
 export function updateReportStatus(id, status, uid) {
-  return updateDoc(reportDoc(id), {
-    status,
-    updatedAt: serverTimestamp(),
-    history: arrayUnion({ status, by: uid, at: Date.now() }),
+  const ref = reportDoc(id);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const current = snap.data() ?? {};
+    const history = Array.isArray(current.history) ? current.history : [];
+    const last = history[history.length - 1];
+    const nextHistory =
+      last?.status === status ? history : [...history, { status, by: uid, at: Date.now() }];
+    tx.update(ref, { status, updatedAt: serverTimestamp(), history: nextHistory });
+    return { changed: last?.status !== status };
   });
 }
 

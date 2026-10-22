@@ -8,10 +8,11 @@ import * as assignmentsService from "../../core/services/assignmentsService";
 import * as clustersService from "../../core/services/clustersService";
 import { createNotification } from "../../core/services/notificationsService";
 import { getReportContact } from "../../core/services/reportContactsService";
-import { displayName, watchAllUsers } from "../../core/services/usersService";
+import { displayName, setUserTeam, watchAllUsers } from "../../core/services/usersService";
 import { DISASTER_TYPES, PRIORITIES } from "../../config/appConfig";
 import ReportMap from "./ReportMap";
 import { findDuplicates } from "./duplicates";
+import { nearestTeam } from "./geo";
 import { PRIORITY_COLORS, statusChip } from "./constants";
 import {
   Alert,
@@ -39,6 +40,13 @@ const ACTIVE_STATUSES = [
   "Team Assigned",
   "Rescue in Progress",
 ];
+
+// A report can only be verified from a pre-verified state. Verifying an already
+// verified report is a no-op, which keeps the status timeline free of repeated
+// "Verified" entries when the button is tapped more than once.
+function canVerify(status) {
+  return status === "Submitted" || status === "Under Verification";
+}
 
 const PRIORITY_RANK = { low: 0, medium: 1, high: 2 };
 
@@ -210,6 +218,10 @@ export default function DispatchPage() {
 
   const verify = (report) =>
     run(async () => {
+      if (!canVerify(report.status)) {
+        setNotice("Report is already verified.");
+        return;
+      }
       await reportsService.updateReport(report.id, { verifiedBy: user.uid });
       await reportsService.updateReportStatus(report.id, "Verified", user.uid);
       await notifyReporter(report, "Report verified", `Your ${report.disasterType} report is verified.`);
@@ -304,6 +316,24 @@ export default function DispatchPage() {
       setNotice(`Cluster of ${cluster.count} assigned to ${team.name}.`);
     });
 
+  const assignMember = (team, member) =>
+    run(async () => {
+      const memberUids = [...new Set([...(team.memberUids ?? []), member.uid])];
+      await teamsService.updateTeam(team.id, { memberUids });
+      await setUserTeam(member.uid, team.id);
+      await logAction(user.uid, "team_member_add", { teamId: team.id, memberUid: member.uid });
+      setNotice(`${displayName(member)} added to ${team.name}.`);
+    });
+
+  const removeMember = (team, member) =>
+    run(async () => {
+      const memberUids = (team.memberUids ?? []).filter((id) => id !== member.uid);
+      await teamsService.updateTeam(team.id, { memberUids });
+      if (member.teamId === team.id) await setUserTeam(member.uid, null);
+      await logAction(user.uid, "team_member_remove", { teamId: team.id, memberUid: member.uid });
+      setNotice(`${displayName(member)} removed from ${team.name}.`);
+    });
+
   return (
     <AppShell
       wide
@@ -333,7 +363,7 @@ export default function DispatchPage() {
       {notice ? <Alert tone="success" className="mb-4">{notice}</Alert> : null}
       {actionError ? <Alert tone="danger" className="mb-4">{actionError}</Alert> : null}
 
-      <div className="flex h-[calc(100vh-16rem)] min-h-[520px] gap-4">
+      <div className="flex h-[calc(100vh-10rem)] min-h-[520px] gap-4">
         <div className="relative flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <ReportMap
             reports={filtered}
@@ -379,7 +409,14 @@ export default function DispatchPage() {
           </div>
 
           {tab === "teams" ? (
-            <TeamsPanel teams={teams} uid={user.uid} />
+            <TeamsPanel
+              teams={teams}
+              uid={user.uid}
+              userById={users}
+              busy={busy}
+              onAssignMember={assignMember}
+              onRemoveMember={removeMember}
+            />
           ) : tab === "clusters" ? (
             <ClustersPanel
               suggested={suggested}
@@ -391,6 +428,7 @@ export default function DispatchPage() {
             />
           ) : selected ? (
             <ReportDetail
+              key={selected.id}
               report={selected}
               teams={teams}
               userById={users}
@@ -543,7 +581,13 @@ function ReportDetail({
   onMarkDuplicate,
   onOpenReport,
 }) {
-  const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
+  const suggestedTeam = useMemo(
+    () => nearestTeam(teams, report.lat, report.lng),
+    [teams, report.lat, report.lng],
+  );
+  const [teamId, setTeamId] = useState(
+    () => suggestedTeam?.team.id ?? teams[0]?.id ?? "",
+  );
   const [contact, setContact] = useState(null);
 
   useEffect(() => {
@@ -557,6 +601,7 @@ function ReportDetail({
   }, [report.id]);
 
   const assignable = report.status === "Verified" || report.status === "Awaiting Assignment";
+  const verifiable = canVerify(report.status);
   const reporter = userById?.[report.reporterId];
 
   return (
@@ -664,16 +709,16 @@ function ReportDetail({
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <Button variant="success" onClick={onVerify} disabled={busy}>
-          <Icon name="check" className="h-4 w-4" />
-          Verify
-        </Button>
         <Button
-          variant="secondary"
-          onClick={onReject}
-          disabled={busy}
-          className="border-red-200 text-red-600 hover:bg-red-50"
+          variant="success"
+          onClick={onVerify}
+          disabled={busy || !verifiable}
+          title={verifiable ? undefined : "Already verified"}
         >
+          <Icon name="check" className="h-4 w-4" />
+          {verifiable ? "Verify" : "Verified"}
+        </Button>
+        <Button variant="dangerOutline" onClick={onReject} disabled={busy}>
           Reject
         </Button>
         {report.status === "Resolved" ? (
@@ -695,11 +740,12 @@ function ReportDetail({
             <select
               value={teamId}
               onChange={(e) => setTeamId(e.target.value)}
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600"
+              className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
             >
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name} ({t.status ?? "available"})
+                  {suggestedTeam?.team.id === t.id ? " · suggested" : ""}
                 </option>
               ))}
             </select>
@@ -714,6 +760,13 @@ function ReportDetail({
             </Button>
           </div>
         )}
+        {assignable && suggestedTeam ? (
+          <p className="mt-2 text-xs text-slate-500">
+            Suggested:{" "}
+            <span className="font-medium text-slate-700">{suggestedTeam.team.name}</span> ·{" "}
+            {suggestedTeam.km.toFixed(1)} km from this report
+          </p>
+        ) : null}
         {!assignable ? (
           <p className="mt-2 text-xs text-slate-400">Verify the report before assigning.</p>
         ) : null}
@@ -728,9 +781,6 @@ function ReportDetail({
 }
 
 function ClustersPanel({ suggested, clusters, reportById, teams, busy, onAssign }) {
-  const [teamId, setTeamId] = useState("");
-  const activeTeamId = teamId || teams[0]?.id || "";
-
   return (
     <div className="flex-1 overflow-y-auto p-4">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -770,33 +820,13 @@ function ClustersPanel({ suggested, clusters, reportById, teams, busy, onAssign 
                   </span>
                 ) : null}
               </div>
-              {teams.length === 0 ? (
-                <p className="mt-2 text-xs text-slate-400">Create a team first.</p>
-              ) : (
-                <div className="mt-3 flex gap-2">
-                  <select
-                    value={activeTeamId}
-                    onChange={(e) => setTeamId(e.target.value)}
-                    className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none focus:border-blue-600"
-                  >
-                    {teams.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                      const team = teams.find((t) => t.id === activeTeamId);
-                      if (team) onAssign(cluster, team);
-                    }}
-                  >
-                    Assign
-                  </Button>
-                </div>
-              )}
+              <ClusterAssign
+                key={cluster.key}
+                cluster={cluster}
+                teams={teams}
+                busy={busy}
+                onAssign={onAssign}
+              />
             </li>
           ))}
         </ul>
@@ -856,17 +886,17 @@ function parseHistoryDate(at) {
 }
 
 function HistoryTimeline({ history, userById }) {
-  const entries = useMemo(
-    () =>
-      (history ?? [])
-        .map((entry) => ({ ...entry, _date: parseHistoryDate(entry.at) }))
-        .sort(
-          (a, b) =>
-            (a._date?.getTime() ?? Number.POSITIVE_INFINITY) -
-            (b._date?.getTime() ?? Number.POSITIVE_INFINITY),
-        ),
-    [history],
-  );
+  const entries = useMemo(() => {
+    const sorted = (history ?? [])
+      .map((entry) => ({ ...entry, _date: parseHistoryDate(entry.at) }))
+      .sort(
+        (a, b) =>
+          (a._date?.getTime() ?? Number.POSITIVE_INFINITY) -
+          (b._date?.getTime() ?? Number.POSITIVE_INFINITY),
+      );
+    // Collapse consecutive duplicate statuses left behind by repeated clicks.
+    return sorted.filter((entry, index) => entry.status !== sorted[index - 1]?.status);
+  }, [history]);
 
   if (entries.length === 0) {
     return <p className="text-sm text-slate-400">No status history recorded yet.</p>;
@@ -966,25 +996,184 @@ function Row({ label, value }) {
   );
 }
 
-function TeamsPanel({ teams, uid }) {
+function ClusterAssign({ cluster, teams, busy, onAssign }) {
+  const nearest = nearestTeam(teams, cluster.lat, cluster.lng);
+  const [teamId, setTeamId] = useState(
+    () => nearest?.team.id ?? teams[0]?.id ?? "",
+  );
+
+  if (teams.length === 0) {
+    return <p className="mt-2 text-xs text-slate-400">Create a team first.</p>;
+  }
+
+  return (
+    <>
+      <div className="mt-3 flex gap-2">
+        <select
+          value={teamId}
+          onChange={(e) => setTeamId(e.target.value)}
+          className="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600"
+        >
+          {teams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+              {nearest?.team.id === t.id ? " · suggested" : ""}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            const team = teams.find((t) => t.id === teamId);
+            if (team) onAssign(cluster, team);
+          }}
+        >
+          Assign
+        </Button>
+      </div>
+      {nearest ? (
+        <p className="mt-1 text-[11px] text-slate-400">
+          Suggested: {nearest.team.name} · {nearest.km.toFixed(1)} km away
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+const CONTACT_MAX = 15;
+
+function sanitizeContact(value) {
+  return value.replace(/[^\d+()\s-]/g, "").slice(0, CONTACT_MAX);
+}
+
+function isValidContact(value) {
+  const digits = value.replace(/\D/g, "");
+  return /^[+\d][\d\s()-]*$/.test(value) && digits.length >= 7 && digits.length <= CONTACT_MAX;
+}
+
+function TeamCard({ team, members, unassigned, busy, onAssignMember, onRemoveMember }) {
+  const [memberId, setMemberId] = useState("");
+
+  return (
+    <li className="rounded-xl border border-slate-200 p-3">
+      <div className="flex items-center justify-between">
+        <span className="font-medium text-slate-800">{team.name}</span>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+          {team.status ?? "available"}
+        </span>
+      </div>
+      {team.contact ? <p className="mt-0.5 text-xs text-slate-400">{team.contact}</p> : null}
+
+      <ul className="mt-2 space-y-1">
+        {members.length === 0 ? (
+          <li className="text-xs text-slate-400">No members assigned.</li>
+        ) : (
+          members.map((m) => (
+            <li key={m.uid} className="flex items-center justify-between text-sm text-slate-700">
+              <span>{displayName(m)}</span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onRemoveMember(team, m)}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600 disabled:opacity-50"
+                aria-label={`Remove ${displayName(m)} from ${team.name}`}
+              >
+                <Icon name="x" className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))
+        )}
+      </ul>
+
+      <div className="mt-2 flex gap-2">
+        <select
+          value={memberId}
+          onChange={(e) => setMemberId(e.target.value)}
+          disabled={busy || unassigned.length === 0}
+          className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-600 disabled:bg-slate-50 disabled:text-slate-400"
+        >
+          <option value="">
+            {unassigned.length === 0 ? "No unassigned responders" : "Add responder…"}
+          </option>
+          {unassigned.map((u) => (
+            <option key={u.uid} value={u.uid}>
+              {displayName(u)}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy || !memberId}
+          onClick={() => {
+            const member = unassigned.find((u) => u.uid === memberId);
+            if (member) {
+              onAssignMember(team, member);
+              setMemberId("");
+            }
+          }}
+        >
+          Add
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+function TeamsPanel({ teams, uid, userById, busy, onAssignMember, onRemoveMember }) {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+
+  const responders = useMemo(
+    () => Object.values(userById ?? {}).filter((u) => u.role === "rescueTeam"),
+    [userById],
+  );
+
+  function membersOf(team) {
+    const ids = new Set(team.memberUids ?? []);
+    responders.forEach((u) => {
+      if (u.teamId === team.id) ids.add(u.uid);
+    });
+    return [...ids].map((id) => userById?.[id]).filter(Boolean);
+  }
+
+  const search = query.trim().toLowerCase();
+  const visibleTeams = search
+    ? teams.filter((t) =>
+        `${t.name} ${t.contact ?? ""} ${membersOf(t)
+          .map((m) => displayName(m))
+          .join(" ")}`
+          .toLowerCase()
+          .includes(search),
+      )
+    : teams;
 
   async function create() {
-    if (!name.trim()) return;
-    setBusy(true);
+    const cleanName = name.trim();
+    const cleanContact = contact.trim();
+    if (!cleanName) {
+      setError("Enter a team name.");
+      return;
+    }
+    if (!isValidContact(cleanContact)) {
+      setError("Enter a valid contact number (7–15 digits).");
+      return;
+    }
+    setCreating(true);
     setError("");
     try {
-      await logAction(uid, "team_create", { name });
-      await teamsService.createTeam({ name: name.trim(), contact: contact.trim() });
+      await logAction(uid, "team_create", { name: cleanName });
+      await teamsService.createTeam({ name: cleanName, contact: cleanContact });
       setName("");
       setContact("");
     } catch (err) {
       setError(err.message ?? "Could not create team.");
     } finally {
-      setBusy(false);
+      setCreating(false);
     }
   }
 
@@ -995,16 +1184,18 @@ function TeamsPanel({ teams, uid }) {
         <Field label="Team name">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Alpha Rescue" />
         </Field>
-        <Field label="Contact number">
+        <Field label="Contact number" hint={`${contact.length}/${CONTACT_MAX}`}>
           <Input
             value={contact}
-            onChange={(e) => setContact(e.target.value)}
+            inputMode="tel"
+            maxLength={CONTACT_MAX}
+            onChange={(e) => setContact(sanitizeContact(e.target.value))}
             placeholder="e.g. +63 900 000 0000"
           />
         </Field>
         {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Button onClick={create} disabled={busy} className="w-full">
-          {busy ? <Spinner className="h-4 w-4" /> : <Icon name="plus" className="h-4 w-4" />}
+        <Button onClick={create} disabled={creating} className="w-full">
+          {creating ? <Spinner className="h-4 w-4" /> : <Icon name="plus" className="h-4 w-4" />}
           Create team
         </Button>
       </div>
@@ -1012,21 +1203,35 @@ function TeamsPanel({ teams, uid }) {
       <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-400">
         Teams ({teams.length})
       </p>
+      <div className="mb-2">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search teams or members…"
+        />
+      </div>
       {teams.length === 0 ? (
         <p className="text-sm text-slate-500">No teams yet.</p>
+      ) : visibleTeams.length === 0 ? (
+        <p className="text-sm text-slate-500">No teams match “{query.trim()}”.</p>
       ) : (
         <ul className="space-y-2">
-          {teams.map((t) => (
-            <li
-              key={t.id}
-              className="flex items-center justify-between rounded-xl border border-slate-200 p-3"
-            >
-              <span className="font-medium text-slate-800">{t.name}</span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                {t.status ?? "available"}
-              </span>
-            </li>
-          ))}
+          {visibleTeams.map((t) => {
+            const members = membersOf(t);
+            const memberIds = new Set(members.map((m) => m.uid));
+            const unassigned = responders.filter((u) => !u.teamId && !memberIds.has(u.uid));
+            return (
+              <TeamCard
+                key={t.id}
+                team={t}
+                members={members}
+                unassigned={unassigned}
+                busy={busy}
+                onAssignMember={onAssignMember}
+                onRemoveMember={onRemoveMember}
+              />
+            );
+          })}
         </ul>
       )}
     </div>
