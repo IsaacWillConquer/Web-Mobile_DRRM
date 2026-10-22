@@ -1,10 +1,21 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/typhoon.dart';
+import 'demo_data.dart';
 
 abstract class TyphoonSource {
   Future<Typhoon?> getActiveTyphoon();
   Future<List<StormSignal>> getStormSignals();
+}
+
+/// Demo source: serves the bundled Ondoy snapshot (no Firestore). Used when
+/// `AppConfig.demoMode` is on.
+class DemoTyphoonSource implements TyphoonSource {
+  @override
+  Future<Typhoon?> getActiveTyphoon() async => DemoData.typhoon;
+
+  @override
+  Future<List<StormSignal>> getStormSignals() async => DemoData.typhoon.signals;
 }
 
 class FirestoreTyphoonSource implements TyphoonSource {

@@ -1,9 +1,13 @@
+import '../config/app_config.dart';
 import '../models/typhoon.dart';
 import 'typhoon_source.dart';
 
 class TyphoonService {
   TyphoonService._({TyphoonSource? source})
-      : _source = source ?? FirestoreTyphoonSource();
+      : _source = source ??
+            (AppConfig.demoMode
+                ? DemoTyphoonSource()
+                : FirestoreTyphoonSource());
 
   static final TyphoonService instance = TyphoonService._();
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class StormSignal {
@@ -97,10 +99,26 @@ class Typhoon {
       forecast: rawForecast
           .map((e) => TyphoonPoint.fromMap(Map<String, dynamic>.from(e as Map)))
           .toList(growable: false),
-      cone: (data['cone'] as Map?)?.cast<String, dynamic>(),
+      cone: _parseCone(data['cone']),
       dangerRadiusKm: (data['dangerRadiusKm'] as num?)?.toDouble(),
     );
   }
+}
+
+// The forecast cone is a GeoJSON geometry. It is stored as a Map when written
+// in-app, but Firestore forbids nested arrays, so it is stored as a JSON string
+// in the database; accept both forms.
+Map<String, dynamic>? _parseCone(Object? value) {
+  if (value is Map) return value.cast<String, dynamic>();
+  if (value is String && value.trim().isNotEmpty) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map) return decoded.cast<String, dynamic>();
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
 }
 
 List<double> _parsePoint(Object? value) {

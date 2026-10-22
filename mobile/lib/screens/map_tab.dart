@@ -31,6 +31,7 @@ class MapTab extends StatefulWidget {
 
 class _MapTabState extends State<MapTab> {
   final String _styleUrl = MapStyles.defaultStyle.url;
+  String? _styleString;
 
   MapLibreMapController? _controller;
   bool _styleLoaded = false;
@@ -76,6 +77,8 @@ class _MapTabState extends State<MapTab> {
       _loadFailed = false;
     });
     try {
+      _styleString = await MapStyles.resolveDefaultStyle();
+
       final provincesRaw = await rootBundle.loadString(_provincesAsset);
       final regionsRaw = await rootBundle.loadString(_regionsAsset);
       _provinces = parseGeoJson(provincesRaw);
@@ -230,7 +233,8 @@ class _MapTabState extends State<MapTab> {
     return Stack(
       children: [
         MapLibreMap(
-          styleString: _styleUrl,
+          key: ValueKey(_styleString ?? _styleUrl),
+          styleString: _styleString ?? _styleUrl,
           initialCameraPosition: const CameraPosition(target: _phCenter, zoom: 5),
           tiltGesturesEnabled: false,
           rotateGesturesEnabled: false,
@@ -256,7 +260,7 @@ class _MapTabState extends State<MapTab> {
                     signal: _signal,
                     onDismiss: _dismiss,
                   ),
-                if (_active == MapOverlay.typhoons && _typhoon!.hasTrack) ...[
+                if (_active == MapOverlay.typhoons && (_typhoon?.hasTrack ?? false)) ...[
                   const SizedBox(height: 8),
                   Center(child: _TyphoonChip(typhoon: _typhoon!)),
                 ],

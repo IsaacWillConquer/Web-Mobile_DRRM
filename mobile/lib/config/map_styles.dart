@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
 import '../models/map_overlay.dart';
 import 'map_config.dart';
 
@@ -23,5 +27,47 @@ class MapStyles {
     ),
   ];
 
-  static MapStyleOption get defaultStyle => all.first;
+  /// The calm grey basemap (OpenFreeMap Positron) is the default for the
+  /// overlay map — light, keyless, and it keeps the hazard colours readable.
+  static MapStyleOption get defaultStyle =>
+      all.firstWhere((s) => s.id == 'positron');
+
+  // Label source-layers we strip so only place/boundary names remain.
+  static const Set<String> _droppedLabelLayers = {
+    'transportation_name',
+    'housenumber',
+    'poi',
+    'poi_label',
+    'airport_label',
+    'transit',
+    'transit_stop_label',
+    'water_name',
+    'waterway_label',
+    'mountain_peak_label',
+    'highway_shield',
+  };
+
+  /// Fetches the Positron style and removes street/POI/building labels so the
+  /// basemap shows place names only. Falls back to the plain style URL on any
+  /// network/parse error, so the map always loads.
+  static Future<String> resolveDefaultStyle() async {
+    final url = defaultStyle.url;
+    try {
+      final res =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 12));
+      if (res.statusCode != 200) return url;
+      final style = jsonDecode(res.body) as Map<String, dynamic>;
+      final layers = (style['layers'] as List?)?.cast<dynamic>();
+      if (layers == null) return url;
+      style['layers'] = layers.where((dynamic layer) {
+        if (layer is! Map) return true;
+        if (layer['type'] != 'symbol') return true;
+        final sourceLayer = (layer['source-layer'] ?? '').toString();
+        return !_droppedLabelLayers.contains(sourceLayer);
+      }).toList();
+      return jsonEncode(style);
+    } catch (_) {
+      return url;
+    }
+  }
 }

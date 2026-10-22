@@ -6,6 +6,11 @@ class AppConfig {
   static const String appName = 'DRRM';
   static const String appTagline = 'Disaster Rescue Reporting & Monitoring';
 
+  /// When true, the hazard overlays (typhoon / storm signals / rain) are drawn
+  /// from bundled demo data (see core/demo_data.dart) instead of Firestore.
+  /// Set to false to use the live feeds (the demo data is seeded in Firestore).
+  static const bool demoMode = false;
+
   static const String cloudinaryCloudName = 'wyjg9xop';
   static const String cloudinaryUploadPreset = 'drrm-cloudinary';
 
