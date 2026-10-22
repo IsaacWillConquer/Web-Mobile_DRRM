@@ -2,13 +2,11 @@ import {
   addDoc,
   collection,
   doc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { COLLECTIONS } from "../../config/appConfig";
@@ -23,12 +21,6 @@ export function createTeam(data) {
     createdAt: serverTimestamp(),
     ...data,
   });
-}
-
-export async function fetchTeams({ status } = {}) {
-  const filters = status ? [where("status", "==", status)] : [];
-  const snap = await getDocs(query(teamsRef, ...filters, orderBy("name")));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 export function watchTeams(onData, onError) {

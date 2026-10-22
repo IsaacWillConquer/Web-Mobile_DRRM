@@ -148,7 +148,7 @@ signed-in user (mobile needs it to route pings); admin-only writes.
 - `bulletins/{id}` — PAGASA/JMA typhoon: `typhoonName`, `internationalName`, `category`,
   `source`, `sourceUrl`, `postedAt`, `active` (bool), `signals[]` `{level:int, areas:string[]}`,
   `track[]` `{lat,lng}`, `forecast[]` `{lat,lng,hours,label}`, `dangerRadiusKm`. Writers:
-  `scripts/fetch_typhoon.js` (JMA, GitHub Actions cron), `scripts/seed_bulletins.js` (samples).
+  `scripts/fetch_typhoon.js` (JMA, GitHub Actions cron), `scripts/seed_demo.js` (demo sample, REST).
 - `forecasts/rain` — Open-Meteo rain: `source`, `sourceUrl`, `postedAt`, `windowDays`,
   `regions[]` `{name, level (1–3), mm}`. Writer: `scripts/fetch_rain.js`.
 

@@ -1,27 +1,7 @@
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  updateProfile,
-} from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../../config/firebase";
-import { COLLECTIONS, ROLES } from "../../config/appConfig";
-
-export async function registerUser({ email, password, name, phone }) {
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
-  await updateProfile(credential.user, { displayName: name });
-  await setDoc(doc(db, COLLECTIONS.users, credential.user.uid), {
-    email,
-    name,
-    phone: phone ?? "",
-    role: ROLES.resident,
-    active: true,
-    createdAt: serverTimestamp(),
-  });
-  return credential.user;
-}
+import { COLLECTIONS } from "../../config/appConfig";
 
 export function loginUser({ email, password }) {
   return signInWithEmailAndPassword(auth, email, password);

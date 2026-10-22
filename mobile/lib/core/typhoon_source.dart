@@ -5,7 +5,6 @@ import 'demo_data.dart';
 
 abstract class TyphoonSource {
   Future<Typhoon?> getActiveTyphoon();
-  Future<List<StormSignal>> getStormSignals();
 }
 
 /// Demo source: serves the bundled Ondoy snapshot (no Firestore). Used when
@@ -13,9 +12,6 @@ abstract class TyphoonSource {
 class DemoTyphoonSource implements TyphoonSource {
   @override
   Future<Typhoon?> getActiveTyphoon() async => DemoData.typhoon;
-
-  @override
-  Future<List<StormSignal>> getStormSignals() async => DemoData.typhoon.signals;
 }
 
 class FirestoreTyphoonSource implements TyphoonSource {
@@ -35,11 +31,5 @@ class FirestoreTyphoonSource implements TyphoonSource {
         snapshot.docs.map((d) => Typhoon.fromMap(d.id, d.data())).toList();
     typhoons.sort((a, b) => b.postedAt.compareTo(a.postedAt));
     return typhoons.first;
-  }
-
-  @override
-  Future<List<StormSignal>> getStormSignals() async {
-    final typhoon = await getActiveTyphoon();
-    return typhoon?.signals ?? const [];
   }
 }

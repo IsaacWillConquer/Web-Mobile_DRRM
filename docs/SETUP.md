@@ -77,3 +77,59 @@ npm run dev        # http://localhost:5173
 cd mobile
 flutter run
 ```
+
+## 8. Demo data & live feeds
+
+The mobile map overlays read two read-only feeds:
+
+| Script | Source | Writes |
+|---|---|---|
+| `fetch_typhoon.js` | JMA (RSMC Tokyo) | `bulletins/active` — track, forecast, danger radius, name |
+| `fetch_rain.js` | Open-Meteo | `forecasts/rain` — 7-day rainfall per region |
+
+- **TCWS (PAGASA per-province signals) are not fetched** — no public API. An admin sets
+  `signals` on `bulletins/active`; the typhoon fetcher merges track fields only, so admin-set
+  `signals` survive.
+- Both use the Admin SDK and run locally or via `.github/workflows/fetch-data.yml`
+  (cron every 3h + manual `workflow_dispatch`). Set the repo secret
+  **`FIREBASE_SERVICE_ACCOUNT`** to the service-account JSON.
+
+```
+cd scripts
+npm install
+set GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\service-account.json
+node fetch_typhoon.js
+node fetch_rain.js
+```
+
+The service account needs a Firestore data role (e.g. **Cloud Datastore User**).
+
+### Demo seeding (recommended — no Admin-SDK IAM needed)
+
+The Admin SDK key on this project is IAM-denied, so demo data is seeded through the
+**Firestore REST API using the Firebase CLI login** (`firebase login`) via
+`scripts/lib/firebase_rest.js`:
+
+- `node seed_demo.js` — `bulletins/active` (historical sample) + `forecasts/rain` (`--clear` to revert).
+- `node seed_rescue_teams.js` — 10 Bulacan rescue teams + their `rescueTeam` accounts.
+- `node seed_simulation.js` — residents + dispatcher + DMO, 26 reports, clusters, assignments,
+  rescueRecords, notifications, logs (`--clear`).
+
+`bulletins/{id}` schema:
+
+```
+typhoonName : string    category : string    source : string    sourceUrl : string?
+postedAt    : Timestamp active   : boolean   signals : [ { level:int, areas:[string] } ]
+track : [ {lat,lng} ]   forecast : [ {lat,lng,hours,label} ]     dangerRadiusKm : number
+```
+
+### Staff accounts
+
+`create_staff.js` creates an Auth user + `users/{uid}.role` (needs the Admin SDK + IAM). If IAM
+is missing, create the user in the Firebase Console → Authentication, then set
+`users/{uid}.role` to `dispatcher` / `rescueTeam` / `dmo` (`active: true`).
+
+### Attribution
+
+- JMA: https://www.jma.go.jp/bosai/typhoon/
+- Open-Meteo: https://open-meteo.com/ (Weather data by Open-Meteo.com, CC BY 4.0; non-commercial)

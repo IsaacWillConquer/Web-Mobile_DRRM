@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "description": "Admin + data fetcher scripts for FinalProject_DRRM",
   "scripts": {
-    "seed:bulletins": "node seed_bulletins.js",
+    "seed:demo": "node seed_demo.js",
+    "seed:teams": "node seed_rescue_teams.js",
+    "seed:simulation": "node seed_simulation.js",
     "create:staff": "node create_staff.js",
     "fetch:typhoon": "node fetch_typhoon.js",
     "fetch:rain": "node fetch_rain.js",

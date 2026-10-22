@@ -3,7 +3,7 @@
 export const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 
 // Symbol source-layers hidden so only place/boundary names remain.
-export const DROPPED_LABEL_LAYERS = new Set([
+const DROPPED_LABEL_LAYERS = new Set([
   "transportation_name",
   "housenumber",
   "poi",

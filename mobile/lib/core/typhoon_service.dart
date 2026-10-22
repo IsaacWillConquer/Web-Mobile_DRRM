@@ -5,9 +5,7 @@ import 'typhoon_source.dart';
 class TyphoonService {
   TyphoonService._({TyphoonSource? source})
       : _source = source ??
-            (AppConfig.demoMode
-                ? DemoTyphoonSource()
-                : FirestoreTyphoonSource());
+            (AppConfig.demoMode ? DemoTyphoonSource() : FirestoreTyphoonSource());
 
   static final TyphoonService instance = TyphoonService._();
 
@@ -30,24 +28,10 @@ class TyphoonService {
     return typhoon;
   }
 
-  Future<List<StormSignal>> getStormSignals({bool force = false}) async {
-    final typhoon = await getActiveTyphoon(force: force);
-    return typhoon?.signals ?? const [];
-  }
-
-  Future<void> refresh() async {
-    await getActiveTyphoon(force: true);
-  }
-
   bool isDismissed(Typhoon? typhoon) =>
       typhoon != null && typhoon.id == dismissedBulletinId;
 
   void dismiss(Typhoon typhoon) {
     dismissedBulletinId = typhoon.id;
-  }
-
-  void clearCache() {
-    _cached = null;
-    _cachedAt = null;
   }
 }

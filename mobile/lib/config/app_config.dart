@@ -15,11 +15,8 @@ class AppConfig {
   static const String cloudinaryUploadPreset = 'drrm-cloudinary';
 
   static String get mapStyleUrl => MapStyles.defaultStyle.url;
-  static const String rainForecastSource = 'Open-Meteo';
 
   static const String ldrrmoHotline = '+639000000000';
-
-  static const List<String> priorities = ['low', 'medium', 'high'];
 
   static const List<String> disabilityOptions = [
     'None',
@@ -42,20 +39,6 @@ class AppConfig {
     'Typhoon',
     'Storm Surge',
     'Other',
-  ];
-
-  static const List<String> reportStatuses = [
-    'Submitted',
-    'Under Verification',
-    'Verified',
-    'Awaiting Assignment',
-    'Team Assigned',
-    'Rescue in Progress',
-    'Resolved',
-    'Closed',
-    'Rejected',
-    'Duplicate',
-    'Cancelled',
   ];
 }
 

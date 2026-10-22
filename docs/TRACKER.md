@@ -146,7 +146,7 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 - [x] Province GeoJSON (geoBoundaries ADM2, simplified) + point-in-polygon + aliases + tests
 - [x] Alert card UI (signal ramp, pulsing ring, collapse) + minimal map/home screen
 - [x] Session-only dismiss (returns on restart or new bulletin id)
-- [x] Deploy `bulletins` rules + seed via `scripts/seed_bulletins.js` *(rules deployed 2026-10-17; seeding needs a service-account key — console fallback or add the `FIREBASE_SERVICE_ACCOUNT` secret for `.github/workflows/fetch-data.yml`)*
+- [x] Deploy `bulletins` rules + seed via `scripts/seed_demo.js` *(rules deployed 2026-10-17; seeding via Firestore REST with the Firebase CLI login — see `scripts/lib/firebase_rest.js`)*
 
 ### P5 — Clustering + notifications + security (Oct 24–27) — E
 - [x] Nearby/duplicate clustering (geohash field on submit + grid-based flags/suggested clusters)
@@ -215,3 +215,17 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-22 | seed | **Firestore seeding unblocked**: the Admin SDK key is IAM-denied, so `scripts/lib/firebase_rest.js` seeds via the **Firestore REST API using the Firebase CLI login** (`firebase login`) — no IAM change needed. Seeded `bulletins/active` (Ondoy) + `forecasts/rain`. Firestore **forbids nested arrays**, so the forecast `cone` is stored as a JSON string and `Typhoon.fromMap` parses both forms. `AppConfig.demoMode=false` (app now reads the live seeded feed). Also seeded **10 Bulacan rescue teams** + their `rescueTeam` accounts (`scripts/seed_rescue_teams.js`, Auth users via web API key, `teamId` set): Malolos, Calumpit, Hagonoy, Paombong, Guiguinto, Plaridel, Pulilan, Bustos, Baliwag, San Ildefonso. `flutter analyze` clean; APK rebuilt. |
 | 2026-10-22 | sim | **Full-activity simulation** (`scripts/seed_simulation.js`, `--clear`): 8 resident accounts (`<phone>@drrm.local` / `resident123`) with Bulacan addresses, a dispatcher + DMO staff account (`bulacan123`), and **26 reports** across the whole status funnel (Submitted/Verified/Awaiting/Team Assigned/Rescue in Progress/Resolved/Closed/Rejected/Duplicate/Cancelled) with `history[]`, 2 report contacts (PII), **2 clusters**, **11 assignments** (all statuses), **6 rescueRecords**, **32 notifications**, **56 audit logs** — so Dispatch, Responder, DMO, Activity and the bell all have live data. Verified back: 26 sim reports, 11 assignments, 24 users. |
 | 2026-10-22 | web-ui | **Web dashboard polish**: left **sidebar nav** + hamburger drawer (replaces top tabs); **web map migrated Leaflet → MapLibre GL v5 + OpenFreeMap Positron** (place-only labels, pins + density, click-select, flyTo) — pinned `maplibre-gl@^5` after a v6 load-event issue; **pagination** on Activity (15/page) and Staff (10/page); **cluster dropdown color fix** (`index.css` `color-scheme: light` + explicit select colors); **Teams search** + **nearest-team suggestion** in report & cluster assign (`geo.js` haversine — shows "Suggested: <team> · X km" and autoselects). Lint clean, build green. |
+
+---
+
+## 11. Pending work
+
+- **Mobile map layers (visual polish)** — improve the typhoon overlay rendering: tapered
+  forecast cone with a dashed outline + subtle fill, a **dashed danger-radius circle** (outline,
+  not a filled disk), track vertex dots, and forecast points styled (T/TY discs + 12/24/36H
+  labels). Revisit the basemap look (open: restore MapTiler Streets vs keep the grey Positron).
+- **Mobile profile redesign** — rebuild `mobile/lib/screens/profile_tab.dart` to the reference:
+  light-grey background, white rounded section cards with a red accent — **PERSONAL INFORMATION**
+  (phone, full name, gender | age, disabilities pill), **HOME ADDRESS** (city, barangay, street,
+  address), **HOUSEHOLD** (house floors, pets pill); keep My Reports + sign-out. Show **N/A** for
+  gender when absent (the register doesn't capture it yet).

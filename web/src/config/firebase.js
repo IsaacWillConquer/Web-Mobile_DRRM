@@ -11,13 +11,8 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-export const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache(),
 });
-
-export const cloudinary = {
-  cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME,
-  uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET,
-};

@@ -1,5 +1,5 @@
 // Great-circle distance between two lat/lng points, in kilometres.
-export function distanceKm(lat1, lng1, lat2, lng2) {
+function distanceKm(lat1, lng1, lat2, lng2) {
   if ([lat1, lng1, lat2, lng2].some((v) => v == null)) return Infinity;
   const R = 6371;
   const toRad = (d) => (d * Math.PI) / 180;
