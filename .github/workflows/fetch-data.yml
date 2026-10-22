@@ -1,4 +1,4 @@
-# Refreshes the read-only hazard feeds the mobile app consumes:
+  # Refreshes the read-only hazard feeds the mobile app consumes:
 #   - bulletins/active  (JMA tropical-cyclone track — scripts/fetch_typhoon.js)
 #   - forecasts/rain    (Open-Meteo 7-day rain per PH region — scripts/fetch_rain.js)
 #

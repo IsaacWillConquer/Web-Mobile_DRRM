@@ -1,9 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderBox;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 import '../config/map_styles.dart';
+import '../core/camera_fit.dart';
 import '../core/location.dart';
 import '../core/overlay_renderer.dart';
 import '../core/overlays.dart';
@@ -32,6 +36,11 @@ class MapTab extends StatefulWidget {
 class _MapTabState extends State<MapTab> {
   final String _styleUrl = MapStyles.defaultStyle.url;
   String? _styleString;
+
+  // Used to measure how much of the map the top overlays cover, so the camera
+  // fit leaves room for the alert card.
+  final GlobalKey _stackKey = GlobalKey();
+  final GlobalKey _topOverlayKey = GlobalKey();
 
   MapLibreMapController? _controller;
   bool _styleLoaded = false;
@@ -102,8 +111,8 @@ class _MapTabState extends State<MapTab> {
       if (!mounted) return;
       setState(() {});
       await _syncMe();
-      _moveToUser();
       await _applyOverlay();
+      await _applyCamera();
     } catch (_) {
       if (mounted) setState(() => _loadFailed = true);
     } finally {
@@ -163,6 +172,101 @@ class _MapTabState extends State<MapTab> {
     }
   }
 
+  bool get _userInPhilippines {
+    final position = _mePosition;
+    return position != null &&
+        isInPhilippines(position.latitude, position.longitude);
+  }
+
+  /// Bounds of whatever the active layer is drawing, or null when the layer is
+  /// off or has no data.
+  GeoBounds? _boundsForActive() {
+    switch (_active) {
+      case MapOverlay.typhoons:
+        final typhoon = _typhoon;
+        return typhoon == null ? null : boundsForTyphoon(typhoon);
+      case MapOverlay.stormSignals:
+        final provinces = _provinces;
+        final typhoon = _typhoon;
+        if (provinces == null || typhoon == null) return null;
+        return boundsForGeoJson(buildStormSignals(provinces, typhoon.signals));
+      case MapOverlay.rainForecast:
+        final regions = _regions;
+        final rain = _rain;
+        if (regions == null || rain == null) return null;
+        return boundsForGeoJson(buildRainForecast(regions, rain.regions));
+      case MapOverlay.none:
+        return null;
+    }
+  }
+
+  /// Screen space the fit must keep clear: the alert card / chip at the top
+  /// (measured live, since the card changes height) and the layer pill, side
+  /// buttons and report button at the bottom.
+  EdgeInsets _fitInsets() {
+    const sideInset = 40.0;
+    const bottomInset = 150.0;
+    var top = 96.0;
+
+    final stackBox = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+    final topBox =
+        _topOverlayKey.currentContext?.findRenderObject() as RenderBox?;
+    if (stackBox != null &&
+        topBox != null &&
+        stackBox.hasSize &&
+        topBox.hasSize) {
+      final overlayBottom = topBox
+          .localToGlobal(Offset(0, topBox.size.height), ancestor: stackBox)
+          .dy;
+      top = math.max(top, overlayBottom + 16);
+      // Never let the card eat more than ~45% of the map height.
+      top = math.min(top, stackBox.size.height * 0.45);
+    }
+    return EdgeInsets.fromLTRB(sideInset, top, sideInset, bottomInset);
+  }
+
+  Future<void> _fitBounds(GeoBounds bounds) async {
+    final controller = _controller;
+    if (controller == null) return;
+    final fit = bounds.withMinSpan(kMinFitSpanDeg);
+    final insets = _fitInsets();
+    await controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(fit.south, fit.west),
+          northeast: LatLng(fit.north, fit.east),
+        ),
+        left: insets.left,
+        top: insets.top,
+        right: insets.right,
+        bottom: insets.bottom,
+      ),
+      duration: const Duration(milliseconds: 700),
+    );
+  }
+
+  /// The one place that decides where the camera goes.
+  ///  - layer on + data  -> fit that layer's data
+  ///  - layer on, no data -> whole Philippines
+  ///  - layer off        -> back to the user (or the Philippines when the
+  ///                        device reports a position outside the country,
+  ///                        e.g. an emulator defaulting to California)
+  Future<void> _applyCamera() async {
+    final controller = _controller;
+    if (controller == null || !_styleLoaded) return;
+
+    final overlayBounds = _boundsForActive();
+    if (overlayBounds != null) {
+      await _fitBounds(overlayBounds);
+    } else if (_active != MapOverlay.none) {
+      await _fitBounds(philippinesBounds);
+    } else if (_userInPhilippines) {
+      _moveToUser();
+    } else if (_mePosition != null) {
+      await _fitBounds(philippinesBounds);
+    }
+  }
+
   Future<void> _recenter() async {
     if (_locating) return;
     setState(() => _locating = true);
@@ -185,6 +289,7 @@ class _MapTabState extends State<MapTab> {
   }
 
   Future<void> _openLayers() async {
+    final activeBefore = _active;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -200,11 +305,15 @@ class _MapTabState extends State<MapTab> {
         rainAvailable: _rain?.regions.isNotEmpty ?? false,
       ),
     );
+    // The sheet covers most of the map while open, so replay the fit once the
+    // map is visible again.
+    if (mounted && _active != activeBefore) _applyCamera();
   }
 
   void _onOverlayChanged(MapOverlay overlay) {
     setState(() => _active = overlay);
     _applyOverlay();
+    _applyCamera();
   }
 
   void _showMessage(String text) {
@@ -231,6 +340,7 @@ class _MapTabState extends State<MapTab> {
   @override
   Widget build(BuildContext context) {
     return Stack(
+      key: _stackKey,
       children: [
         MapLibreMap(
           key: ValueKey(_styleString ?? _styleUrl),
@@ -244,7 +354,7 @@ class _MapTabState extends State<MapTab> {
             _styleLoaded = true;
             _syncMe();
             _applyOverlay();
-            _moveToUser();
+            _applyCamera();
           },
         ),
         SafeArea(
@@ -252,6 +362,7 @@ class _MapTabState extends State<MapTab> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 64, 0),
             child: Column(
+              key: _topOverlayKey,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (_showCard)
