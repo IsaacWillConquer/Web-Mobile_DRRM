@@ -17,8 +17,8 @@ rescue team, DMO, admin (web portal).
    info (optional), home address (city/barangay/street) and household details. This profile
    powers "reports by area" analytics and helps responders.
 3. **Log in** with your phone number and password. Passwords are 8+ characters.
-4. Forgot your login / locked out? Contact your LDRRMO — staff accounts are managed by the
-   admin; resident issues are handled through the admin's Staff page.
+4. Forgot your login / locked out? Contact your LDRRMO — staff accounts are managed on the
+   admin's **Staff** page, resident (mobile) accounts on the admin's **Users** page.
 
 ### Web — staff only (email + password)
 1. Open the portal (Firebase Hosting URL).
@@ -111,6 +111,10 @@ You triage incoming reports and run assignments.
 - **Staff page** (admin-only): create staff accounts (email invite-style), change roles,
   enable/disable (`active`), delete. The **dispatcher list** (`config/dispatch`) is kept in
   sync automatically so mobile pings route correctly.
+- **Users page** (admin-only): manage the **mobile-only resident accounts** — create a login
+  (mobile number + temporary password + profile), edit name/email/address, enable/disable,
+  delete. Residents sign in on the app with their mobile number, so the number is the login
+  identity and is read-only after creation; the email is contact info only.
 - **Activity page** — the audit trail (FR-13): logins, staff changes, verifications,
   rejections, priority changes, assignments, duplicates, closures, rescue completions.
 - Admin is a superuser: same dashboards as dispatcher/dmo, plus account management.
@@ -118,6 +122,8 @@ You triage incoming reports and run assignments.
 ## 7. Notifications
 
 - **Web:** bell icon with unread badge; click to mark read, "mark all" to clear.
+- **Web (dispatchers/admin):** when a new report arrives, a **pop-up toast + sound alert**
+  appears in the corner; click it (or the bell) to jump to Dispatch.
 - **Mobile:** reports screen shows status updates; dispatchers receive "new report" pings.
 - Push (FCM) is planned future work — today notifications are in-app.
 

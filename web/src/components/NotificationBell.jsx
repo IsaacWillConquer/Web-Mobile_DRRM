@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../core/auth/authContext";
 import {
@@ -7,6 +7,9 @@ import {
   watchNotifications,
 } from "../core/services/notificationsService";
 import { Icon } from "./ui";
+
+const PANEL_WIDTH = 320;
+const PANEL_MAX_HEIGHT = 384;
 
 function timeAgo(ts) {
   const date = typeof ts?.toDate === "function" ? ts.toDate() : ts ? new Date(ts) : null;
@@ -27,7 +30,10 @@ export default function NotificationBell() {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState(null);
   const ref = useRef(null);
+  const buttonRef = useRef(null);
+  const panelRef = useRef(null);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -47,6 +53,41 @@ export default function NotificationBell() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
+  const panelWidth = useMemo(
+    () => Math.min(PANEL_WIDTH, window.innerWidth - 16),
+    [],
+  );
+
+  const position = useCallback(() => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const width = Math.min(PANEL_WIDTH, window.innerWidth - 16);
+    const maxLeft = Math.max(8, window.innerWidth - width - 8);
+    const left = Math.min(Math.max(8, rect.right - width), maxLeft);
+
+    const panelH = panelRef.current?.offsetHeight ?? 0;
+    const viewportH = window.innerHeight;
+    const spaceBelow = viewportH - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    const openUp = panelH > 0 && spaceBelow < panelH && spaceAbove > spaceBelow;
+    let top = openUp ? rect.top - panelH - 8 : rect.bottom + 8;
+    top = Math.max(8, Math.min(top, viewportH - 8 - (panelH || 0)));
+
+    setCoords({ top, left, width });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    position();
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [open, position, items]);
+
   const unread = useMemo(() => items.filter((i) => !i.read).length, [items]);
 
   async function openItem(item) {
@@ -58,6 +99,7 @@ export default function NotificationBell() {
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
         aria-label="Notifications"
         className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
@@ -71,8 +113,18 @@ export default function NotificationBell() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+        <div
+          ref={panelRef}
+          style={{
+            position: "fixed",
+            top: coords?.top ?? 0,
+            left: coords?.left ?? -9999,
+            width: coords?.width ?? panelWidth,
+            maxHeight: PANEL_MAX_HEIGHT,
+          }}
+          className="z-50 flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10"
+        >
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
             <span className="text-sm font-semibold text-slate-900">Notifications</span>
             {unread > 0 ? (
               <button
@@ -83,7 +135,7 @@ export default function NotificationBell() {
               </button>
             ) : null}
           </div>
-          <div className="max-h-96 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {items.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-400">
                 You're all caught up.
@@ -103,12 +155,12 @@ export default function NotificationBell() {
                           item.read ? "bg-slate-200" : "bg-blue-600"
                         }`}
                       />
-                      <span className="min-w-0">
+                      <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-slate-800">
                           {item.title ?? "Update"}
                         </span>
                         {item.body ? (
-                          <span className="mt-0.5 block line-clamp-2 text-xs text-slate-500">
+                          <span className="mt-0.5 block line-clamp-2 break-words text-xs text-slate-500">
                             {item.body}
                           </span>
                         ) : null}

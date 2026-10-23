@@ -98,8 +98,9 @@ Keep the stripped **Positron** style, but stop stripping the place labels that h
 
 | # | Step | Status |
 |---|---|---|
-| 1 | Camera fit (`camera_fit.dart`, `map_tab.dart`, tests) | Delivered — **awaiting `flutter analyze` + device test** |
-| 2 | Typhoon track + fetcher (cone, categories, trimmed simulation seed, `bulletins/simulation`, workflow fix) | Not started |
+| 1 | Camera fit (`camera_fit.dart`, `map_tab.dart`, tests) | Delivered — analyze clean, 12/12 tests pass; **awaiting device check of padding** |
+| 2a | Typhoon **data layer**: `typhoon_geo.js` (PAGASA classifier, cone builder, JMA parser), `storm_sim_data.js` + `seed_storm_sim.js` (`bulletins/simulation`), `fetch_typhoon.js` rewrite (cone, wind, stale-field cleanup, `--dry-run`/`--fixture`), `fetch-data.yml` fix, 13 Node tests | Delivered — Node tests pass; **awaiting your run + `fetch_typhoon.js --dry-run` against live JMA** |
+| 2b | Typhoon **rendering** (Flutter): per-point wind/category, past vs forecast split, cone, wind-radius ring, `12H · TS` markers, SIMULATION badge, read `bulletins/simulation` | Not started |
 | 3 | Storm signals labels + legend | Not started |
 | 4 | Rain per province (+ find why it currently renders nothing) | Not started |
 | 5 | Alert card, layer sheet, status / stale / empty states | Not started |
@@ -126,10 +127,32 @@ Keep the stripped **Positron** style, but stop stripping the place labels that h
 
 ---
 
+### Data shape added in step 2a (`bulletins/active` and `bulletins/simulation`)
+
+| Field | Notes |
+|---|---|
+| `stormId` | JMA id (live) or `SIM-ONDOY`; used to clear stale `signals` when the storm changes |
+| `track[]` | `{lat, lng, windKph?, pre?}` (`windKph` only on the last point = now), oldest first; the **last point is "now"**; `pre: true` = depression stage (JMA `preTyphoon`) |
+| `forecast[]` | `{lat, lng, hours, label, validAt, radiusKm, windKph, jmaClass}`; JMA's 1H *estimate* is dropped, real forecasts start at 3H |
+| `galeArea` / `stormArea` | `{lat, lng, radiusKm}` circles for gale-force (30 kt) and storm-force (50 kt) winds; `stormArea` only when JMA gives one full circle. Centres are NOT the storm centre |
+| `dangerRadiusKm` | legacy field: `stormArea` radius, else `galeArea` radius |
+| `analysisAt` | ISO time of the current position |
+| `cone` | GeoJSON Polygon/MultiPolygon as a JSON **string**; the swept area of the forecast circles along the track (capsule union via `polygon-clipping`, so it hugs a curving path) |
+| `maxWindsKph` / `gustKph` / `pressureHpa` | wind at "now" (JMA 10-min sustained, converted from knots), gust, central pressure. `category` is derived from the wind with the PAGASA scale |
+| `jmaClass` | JMA's own class at "now" / per forecast point (`TY`, `STS`, `TS`, `TD`, `LOW`). `LOW` = extratropical low: show as LOW, not as a PAGASA category |
+| `simulation` / `demo` | only on `bulletins/simulation`; the live fetcher deletes them from `bulletins/active` |
+
+Live-fetcher rules for `bulletins/active`: `signals` are kept (admin-entered) unless the doc was a demo/simulation, belonged to a different storm, or the storm ended.
+
+---
+
 ## 7. Open items (decide inside the relevant step)
 
 - Exact rain thresholds in mm (current: ≥150 heavy, ≥50 moderate, else light)
 - Safety Tips wording per signal level
 - Whether the camera should re-fit when the alert card is expanded after a fit (not implemented)
-- Confirm JMA gives a wind value per forecast point (needed for category markers); run the fetcher once against a live storm to verify the cone/wind code
-- Confirm `maplibre_gl` 0.27.1 API: `animateCamera(duration:)` and padding units
+- **Forecast marker labels (step 2b):** JMA forecasts are 3H…24H every 3 h, then 45H/69H/93H (fixed UTC times), too many to label. Decide: which points get markers, and label as "+12H" or as a Philippine-time clock label
+- Details sheet (step 5) can also show movement and size: `specifications.json` has `course` (Japanese compass text), `speed`, and `scale`; not stored yet
+- Confirm the service account can write Firestore (role "Cloud Datastore User"); the seeders note the Admin SDK key was IAM-denied
+- Run `node seed_storm_sim.js --migrate` only after the app build that reads `bulletins/simulation` (step 2b) is installed
+- Verify camera padding looks right on a real device (the `animateCamera(duration:)` and bounds API compile fine on `maplibre_gl` 0.27.1)

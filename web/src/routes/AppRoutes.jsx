@@ -5,6 +5,7 @@ import DispatchPage from "../pages/dispatch/DispatchPage";
 import ResponderPage from "../pages/responder/ResponderPage";
 import DmoPage from "../pages/dmo/DmoPage";
 import StaffPage from "../pages/admin/StaffPage";
+import UsersPage from "../pages/admin/UsersPage";
 import ActivityPage from "../pages/admin/ActivityPage";
 import ProtectedRoute from "../core/guards/ProtectedRoute";
 import { useAuth } from "../core/auth/authContext";
@@ -67,6 +68,15 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute roles={[ROLES.admin]}>
             <StaffPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/users"
+        element={
+          <ProtectedRoute roles={[ROLES.admin]}>
+            <UsersPage />
           </ProtectedRoute>
         }
       />

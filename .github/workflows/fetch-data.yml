@@ -1,16 +1,18 @@
-  # Refreshes the read-only hazard feeds the mobile app consumes:
+# Refreshes the read-only hazard feeds the mobile app consumes:
 #   - bulletins/active  (JMA tropical-cyclone track — scripts/fetch_typhoon.js)
-#   - forecasts/rain    (Open-Meteo 7-day rain per PH region — scripts/fetch_rain.js)
+#   - forecasts/rain    (Open-Meteo 7-day rain forecast — scripts/fetch_rain.js)
 #
 # Both scripts write via the Admin SDK (client rules are read-only), so the
 # workflow needs a service-account key:
 #   1. Firebase console → Project settings → Service accounts → Generate new private key
 #   2. Repo → Settings → Secrets and variables → Actions → New repository secret
 #      Name: FIREBASE_SERVICE_ACCOUNT   Value: full JSON contents
+#   3. The service account must be allowed to write Firestore (IAM role
+#      "Cloud Datastore User"). If runs fail with PERMISSION_DENIED, add it.
 #
-# Until the secret is added, these runs are skipped — seed/refresh manually via
-# the Firebase console (see docs/TRACKER.md status log) or locally with
-# GOOGLE_APPLICATION_CREDENTIALS set.
+# Until the secret exists the run passes with a warning and writes nothing
+# (see the "Check service-account secret" step). Run it by hand any time from
+# Actions → fetch-data → Run workflow.
 
 name: fetch-data
 
@@ -28,7 +30,6 @@ concurrency:
 
 jobs:
   fetch:
-    if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -37,25 +38,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The `secrets` context is not allowed in job-level `if`, so the secret is
+      # checked here instead: mapped to an env var, then tested in the shell.
+      - name: Check service-account secret
+        id: key
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SERVICE_ACCOUNT" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT is not set - skipping fetch."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            printf '%s' "$SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.key.outputs.present == 'true'
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: scripts/package-lock.json
 
-      - name: Write service-account key
-        run: echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > "$RUNNER_TEMP/sa.json"
-
       - name: Install dependencies
+        if: steps.key.outputs.present == 'true'
         run: npm ci
 
       - name: Fetch typhoon (JMA)
+        if: steps.key.outputs.present == 'true'
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
           FIREBASE_PROJECT_ID: drrm-app
         run: node fetch_typhoon.js
 
       - name: Fetch rain forecast (Open-Meteo)
+        if: steps.key.outputs.present == 'true'
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
           FIREBASE_PROJECT_ID: drrm-app

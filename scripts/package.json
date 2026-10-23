@@ -7,13 +7,16 @@
     "seed:demo": "node seed_demo.js",
     "seed:teams": "node seed_rescue_teams.js",
     "seed:simulation": "node seed_simulation.js",
+    "seed:storm": "node seed_storm_sim.js",
     "create:staff": "node create_staff.js",
     "fetch:typhoon": "node fetch_typhoon.js",
     "fetch:rain": "node fetch_rain.js",
+    "test": "node --test",
     "test:rules": "firebase emulators:exec --only firestore --project rules-test-drrm \"node rules-test/run-tests.js\""
   },
   "dependencies": {
-    "firebase-admin": "^13.0.0"
+    "firebase-admin": "^13.0.0",
+    "polygon-clipping": "^0.15.7"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^6.0.0",

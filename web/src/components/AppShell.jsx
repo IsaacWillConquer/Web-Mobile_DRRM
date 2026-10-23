@@ -7,6 +7,7 @@ import { logAction } from "../core/audit/logAction";
 import { APP_NAME, APP_TAGLINE, ROLE_LABELS, ROLES } from "../config/appConfig";
 import { Icon } from "./ui";
 import NotificationBell from "./NotificationBell";
+import ReportAlerts from "./ReportAlerts";
 
 const NAV = [
   { to: "/dashboard", label: "Overview", icon: "overview", roles: null },
@@ -25,6 +26,7 @@ const NAV = [
   { to: "/dmo", label: "Analytics", icon: "analytics", roles: [ROLES.dmo, ROLES.admin] },
   { to: "/admin/activity", label: "Activity", icon: "activity", roles: [ROLES.admin, ROLES.dmo] },
   { to: "/admin/staff", label: "Staff", icon: "staff", roles: [ROLES.admin] },
+  { to: "/admin/users", label: "Users", icon: "users", roles: [ROLES.admin] },
 ];
 
 function initials(name, email) {
@@ -89,6 +91,7 @@ export default function AppShell({ title, subtitle, actions, children, wide = fa
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <ReportAlerts />
       {/* Mobile top bar */}
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur lg:hidden">
         <button
