@@ -28,7 +28,8 @@ Full setup: [`SETUP.md`](SETUP.md).
 | Path | Owner | What |
 |---|---|---|
 | `firestore/`, `docs/` | A | rules, indexes, auth/roles, audit, docs |
-| `web/src/pages/dispatch/`, `web/src/core/services/` | B | admin/dispatch dashboard, shared data layer |
+| `web/src/pages/dispatch/`, `web/src/core/services/` | B | dispatch dashboard, shared data layer |
+| `web/src/pages/admin/` | B | Staff / Users / Activity management |
 | `web/src/pages/responder/`, `web/src/pages/dmo/` | C | responder UI, DMO analytics |
 | `mobile/` | D | resident Flutter app |
 | `web/src/components/`, integration/offline/FCM, deploy | E | shared UI, cross-cutting, QA |

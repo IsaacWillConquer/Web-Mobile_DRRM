@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -40,4 +41,15 @@ export function updateAssignmentStatus(id, status, uid) {
     updatedBy: uid,
     updatedAt: serverTimestamp(),
   });
+}
+
+// Cancel every still-open assignment for a report (e.g. when it is rejected or
+// marked duplicate). Completed/declined/cancelled assignments are left alone.
+export async function cancelAssignmentsForReport(reportId, uid) {
+  const snap = await getDocs(query(assignmentsRef, where("reportId", "==", reportId)));
+  const open = snap.docs.filter(
+    (d) => !["completed", "declined", "cancelled"].includes(d.data().status),
+  );
+  await Promise.all(open.map((d) => updateAssignmentStatus(d.id, "cancelled", uid)));
+  return open.length;
 }

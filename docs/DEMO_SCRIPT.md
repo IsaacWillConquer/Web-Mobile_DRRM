@@ -12,11 +12,11 @@ it proves — the FR table in `docs/DEFENSE_NOTES.md` §6 is the checklist.
 | 2 | **Resident signup (45s)** | Mobile | Phone-number registration wizard: profile, address, household. Emphasize +63 normalization. | FR-01 |
 | 3 | **Submit a report (90s)** | Mobile | Report flow: pick Flood → GPS auto-pin → drag pin manually → add 2 photos (mention type/size validation on a rejected file) → "for someone else" contact block with special needs → submit. Show the confirmation. | FR-02/03/04 |
 | 4 | **Dispatcher ping (30s)** | Web | Bell badge lights up — "residents ping dispatchers instantly through a rule-locked notification" — open the notification, jump to the report. | FR-09 |
-| 5 | **Triage (90s)** | Web | Live map (pins by priority, density mode). Verify a report (verifier recorded), set priority, **reject another with a reason** (show the mobile notification), flag/mark a duplicate. | FR-05/06/14/15 |
-| 6 | **Assign (45s)** | Web | Suggested cluster → assign "Rescue Alpha" → team status flips, rescue team notified. | FR-07 |
+| 5 | **Triage (90s)** | Web | Live map — **rescue queue, oldest first** (pins colored by waiting time, density mode). Verify a report (verifier recorded), **reject another with a reason** (show the mobile notification), flag/mark a duplicate. | FR-05/06/14/15 |
+| 6 | **Assign (45s)** | Web | Assign "Rescue Alpha" to a report, then **Add backup team** "Rescue Bravo" to the same incident → both teams' status flips, rescue teams notified. (Optional: suggested cluster → one assignment covers all.) | FR-07 |
 | 7 | **Rescue (60s)** | Web + mobile split | Rescue team accepts → starts (report → Rescue in Progress) → **PII unlocks only after teamId assignment** (say: "contact details are Data-Privacy-Act gated") → completes with people rescued. | FR-11, §8 |
 | 8 | **Tracking (30s)** | Mobile | My Reports timeline: Submitted → … → Resolved with timestamps; rejection reason visible on the rejected one. | FR-08 |
-| 9 | **Analytics (60s)** | Web (dmo) | KPIs (resolve rate, avg time-to-verify), type/priority charts, reports-by-area, then **CSV + PDF export**. | FR-12 |
+| 9 | **Analytics (60s)** | Web (dmo) | KPIs (resolve rate, avg time-to-verify), type chart + **open-reports-by-waiting-time**, reports-by-area, then **CSV + PDF export**. | FR-12 |
 | 10 | **Governance (45s)** | Web (admin) | Staff page (create/disable a throwaway account live), **Activity page audit trail** — "every action is append-only and immutable in rules." | FR-13 |
 | 11 | **Hazard overlays (30s)** | Mobile | Layers sheet: typhoon track / storm signals / rain forecast overlays on the map; typhoon alert card for the province. | value-add |
 | 12 | **Close (15s)** | Web + mobile side by side | "Serverless Firebase, security enforced in rules — tested 50/50 in the emulator. DRRM: report, verify, rescue." | — |

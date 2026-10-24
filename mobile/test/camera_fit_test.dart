@@ -7,6 +7,8 @@ Typhoon _typhoon({
   List<TyphoonPoint> forecast = const [],
   Map<String, dynamic>? cone,
   double? dangerRadiusKm,
+  WindArea? galeArea,
+  WindArea? stormArea,
 }) {
   return Typhoon(
     id: 't',
@@ -20,6 +22,8 @@ Typhoon _typhoon({
     forecast: forecast,
     cone: cone,
     dangerRadiusKm: dangerRadiusKm,
+    galeArea: galeArea,
+    stormArea: stormArea,
   );
 }
 
@@ -187,6 +191,29 @@ void main() {
 
     test('returns null when there is nothing to frame', () {
       expect(boundsForTyphoon(_typhoon()), isNull);
+    });
+
+    test('only the most recent track points are framed', () {
+      final b = boundsForTyphoon(_typhoon(
+        track: [
+          for (var i = 0; i < 20; i++) [10.0, 100.0 + i], // lng 100..119
+        ],
+        forecast: const [TyphoonPoint(lat: 11, lng: 121, hours: 12)],
+      ))!;
+      expect(b.west, 110.0); // last 10 points: 110..119
+      expect(b.east, 121.0);
+    });
+
+    test('frames the storm-force ring but not the huge gale ring', () {
+      final b = boundsForTyphoon(_typhoon(
+        track: const [
+          [15.0, 122.0],
+        ],
+        galeArea: const WindArea(lat: 15, lng: 122, radiusKm: 700),
+        stormArea: const WindArea(lat: 15, lng: 122, radiusKm: 111.19),
+      ))!;
+      expect(b.north, closeTo(16.0, 0.02));
+      expect(b.south, closeTo(14.0, 0.02));
     });
   });
 

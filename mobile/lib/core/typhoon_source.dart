@@ -27,9 +27,25 @@ class FirestoreTyphoonSource implements TyphoonSource {
         await _db.collection(collection).where('active', isEqualTo: true).get();
     if (snapshot.docs.isEmpty) return null;
 
-    final typhoons =
-        snapshot.docs.map((d) => Typhoon.fromMap(d.id, d.data())).toList();
-    typhoons.sort((a, b) => b.postedAt.compareTo(a.postedAt));
-    return typhoons.first;
+    return selectActiveTyphoon(
+      snapshot.docs.map((d) => Typhoon.fromMap(d.id, d.data())),
+    );
   }
+}
+
+/// Which bulletin the app shows. The live JMA feed wins over the demo-only
+/// simulation (`bulletins/simulation`), unless the simulation was switched on
+/// with `overrideLive` (for demos while a real storm is on the map).
+Typhoon? selectActiveTyphoon(Iterable<Typhoon> candidates) {
+  final active = candidates.where((t) => t.active).toList();
+  if (active.isEmpty) return null;
+
+  int newestFirst(Typhoon a, Typhoon b) => b.postedAt.compareTo(a.postedAt);
+  final live = active.where((t) => !t.isSimulation).toList()..sort(newestFirst);
+  final sims = active.where((t) => t.isSimulation).toList()..sort(newestFirst);
+
+  final forced = sims.where((t) => t.overridesLive).toList();
+  if (forced.isNotEmpty) return forced.first;
+  if (live.isNotEmpty) return live.first;
+  return sims.isEmpty ? null : sims.first;
 }

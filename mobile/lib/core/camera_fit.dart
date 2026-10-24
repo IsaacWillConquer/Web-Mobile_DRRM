@@ -90,22 +90,30 @@ GeoBounds? boundsForGeoJson(Object? geojson) {
   return GeoBounds.fromLatLngs(points);
 }
 
-/// Bounds covering everything the Typhoons layer draws: the track, forecast
-/// points, forecast cone and the danger circle around the current position.
+/// How many of the most recent past-track points the Typhoons fit includes.
+/// The full past track can start thousands of km away and would zoom the map
+/// out until the storm is a dot.
+const int kRecentTrackPoints = 10;
+
+/// Bounds for the Typhoons layer: the storm's recent path, every forecast
+/// point, the forecast cone and the storm-force circle. The gale-force circle
+/// is deliberately left out; it is huge and may run off screen.
 GeoBounds? boundsForTyphoon(Typhoon typhoon) {
+  final track = typhoon.track.length > kRecentTrackPoints
+      ? typhoon.track.sublist(typhoon.track.length - kRecentTrackPoints)
+      : typhoon.track;
   final points = <List<double>>[
-    ...typhoon.track,
+    ...track,
     for (final p in typhoon.forecast) [p.lat, p.lng],
   ];
 
   final cone = typhoon.cone;
   if (cone != null) _collectGeoJson(cone, points);
 
-  final radiusKm = typhoon.dangerRadiusKm;
-  if (radiusKm != null && typhoon.track.isNotEmpty) {
-    final center = typhoon.track.last;
-    for (final ring in circleRing(center[0], center[1], radiusKm)) {
-      points.add([ring[1], ring[0]]); // ring is [lng, lat]
+  final ring = stormRing(typhoon);
+  if (ring != null) {
+    for (final p in circleRing(ring.lat, ring.lng, ring.radiusKm)) {
+      points.add([p[1], p[0]]); // ring is [lng, lat]
     }
   }
   return GeoBounds.fromLatLngs(points);

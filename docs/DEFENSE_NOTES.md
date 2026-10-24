@@ -66,6 +66,11 @@ enforced in Firestore rules, not app code.
 6. **No file-type validation server-side for images** (Cloudinary unsigned upload); size/type
    checks are client-side (R3-lite).
 7. **Duplicate detection ignores description text** — it keys on type + location + time only.
+8. **Priority is time-only (deliberate FR-06 deviation).** FR-06 asks for prioritization "based on
+   urgency and risk". We deliberately rank by **submission time** — the oldest active report is
+   rescued first — which is transparent, severity-free and impossible to game. There is **no
+   manual `low/medium/high` input** in the UI; the stored `priority` field is legacy (mobile still
+   writes `medium`) and unused for ordering.
 
 ## 5. Backup & disaster recovery (requirement §8)
 
@@ -90,8 +95,8 @@ enforced in Firestore rules, not app code.
 | FR-03 Location | GPS + manual pin (lat/lng stored) |
 | FR-04 Images | ≤3 Cloudinary photos per report (rules-enforced cap) |
 | FR-05 Management | Dispatch verify / reject-with-reason / close |
-| FR-06 Prioritization | `low/medium/high` priority, map + queue ordering |
-| FR-07 Assignment | Single-report + cluster assignment; team status flips |
+| FR-06 Prioritization | Time-based rescue queue (oldest active report = #1); map + queue ordering. *(Deviation: no urgency/severity input — see §4.8)* |
+| FR-07 Assignment | Single-report, **backup team**, and cluster assignment; team status flips |
 | FR-08 Status monitoring | `history[]` timeline (mobile) + status board (web) |
 | FR-09 Notifications | In-app fan-out both directions (rule-locked pings) |
 | FR-10 Mapping | Leaflet live map (web), MapLibre overlays (mobile) |

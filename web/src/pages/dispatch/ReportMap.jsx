@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { PRIORITY_COLORS } from "./constants";
+import { ageBucket, formatDuration, tsMillis } from "./constants";
 import { STYLE_URL, hideNonPlaceLabels } from "./mapStyle";
-
-const DENSITY_COLORS = {
-  high: "#dc2626",
-  medium: "#d97706",
-  low: "#2563eb",
-};
 
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 const CENTER = [121.774, 12.8797];
@@ -18,24 +12,32 @@ function densityCells(reports) {
   reports.forEach((r) => {
     if (r.lat == null || r.lng == null) return;
     const key = `${r.lat.toFixed(2)},${r.lng.toFixed(2)}`;
-    if (!cells[key]) cells[key] = { key, lat: 0, lng: 0, count: 0, priority: "low" };
+    if (!cells[key]) cells[key] = { key, lat: 0, lng: 0, count: 0, oldestMs: null };
     const cell = cells[key];
     cell.lat += r.lat;
     cell.lng += r.lng;
     cell.count += 1;
-    if (r.priority === "high" || (r.priority === "medium" && cell.priority !== "high")) {
-      cell.priority = r.priority;
-    }
+    const ms = tsMillis(r.createdAt);
+    if (ms != null && (cell.oldestMs == null || ms < cell.oldestMs)) cell.oldestMs = ms;
   });
+  const now = Date.now();
   return Object.values(cells).map((c) => ({
     ...c,
     lat: c.lat / c.count,
     lng: c.lng / c.count,
+    waitingMs: c.oldestMs != null ? Math.max(0, now - c.oldestMs) : 0,
   }));
 }
 
-function buildFeatureCollection(reports, mode, selectedId) {
+function buildFeatureCollection(reports, mode, selectedId, rankById = {}, waitingById = {}) {
   const features = [];
+  const now = Date.now();
+  const waitingFor = (r) => {
+    if (waitingById[r.id] != null) return waitingById[r.id];
+    const ms = tsMillis(r.createdAt);
+    return ms != null ? Math.max(0, now - ms) : 0;
+  };
+
   if (mode === "density") {
     const cells = densityCells(reports);
     const max = Math.max(1, ...cells.map((c) => c.count));
@@ -44,9 +46,9 @@ function buildFeatureCollection(reports, mode, selectedId) {
         type: "Feature",
         properties: {
           id: null,
-          label: `${c.count} report${c.count > 1 ? "s" : ""} nearby`,
+          label: `${c.count} report${c.count > 1 ? "s" : ""} nearby\nOldest waiting ${formatDuration(c.waitingMs)}`,
           radius: 12 + (c.count / max) * 24,
-          color: DENSITY_COLORS[c.priority] ?? "#64748B",
+          color: ageBucket(c.waitingMs).color,
           opacity: 0.35,
           strokeWidth: 1,
         },
@@ -59,13 +61,17 @@ function buildFeatureCollection(reports, mode, selectedId) {
   reports.forEach((r) => {
     if (r.lat == null || r.lng == null) return;
     const selected = r.id === selectedId;
+    const rank = rankById[r.id];
+    const waiting = waitingFor(r);
     features.push({
       type: "Feature",
       properties: {
         id: r.id,
-        label: `${r.disasterType} · ${r.status}\nPriority: ${r.priority ?? "—"}`,
+        label: `${r.disasterType} · ${r.status}${
+          rank ? `\n#${rank} in queue` : ""
+        }\nWaiting ${formatDuration(waiting)}`,
         radius: selected ? 10 : 7,
-        color: PRIORITY_COLORS[r.priority] ?? "#64748B",
+        color: ageBucket(waiting).color,
         opacity: 1,
         strokeWidth: selected ? 3 : 2,
       },
@@ -75,7 +81,14 @@ function buildFeatureCollection(reports, mode, selectedId) {
   return { type: "FeatureCollection", features };
 }
 
-export default function ReportMap({ reports, selectedId, onSelect, mode = "pins" }) {
+export default function ReportMap({
+  reports,
+  selectedId,
+  onSelect,
+  mode = "pins",
+  rankById = {},
+  waitingById = {},
+}) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const popupRef = useRef(null);
@@ -88,8 +101,8 @@ export default function ReportMap({ reports, selectedId, onSelect, mode = "pins"
   }, [onSelect]);
 
   const data = useMemo(
-    () => buildFeatureCollection(reports, mode, selectedId),
-    [reports, mode, selectedId],
+    () => buildFeatureCollection(reports, mode, selectedId, rankById, waitingById),
+    [reports, mode, selectedId, rankById, waitingById],
   );
 
   useEffect(() => {

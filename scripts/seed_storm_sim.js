@@ -8,6 +8,8 @@
 //
 // Usage:
 //   node seed_storm_sim.js              # simulation ON  (storm appears, badged SIMULATION)
+//   node seed_storm_sim.js --override   # simulation ON and shown even while a REAL storm
+//                                       # is active (default: the live storm wins)
 //   node seed_storm_sim.js --off        # simulation OFF
 //   node seed_storm_sim.js --migrate    # also deactivate the legacy demo doc in
 //                                       # bulletins/active (do this once the app
@@ -22,6 +24,7 @@ const PROJECT = process.env.FIREBASE_PROJECT_ID || "drrm-app";
 const args = process.argv.slice(2);
 const off = args.includes("--off");
 const migrate = args.includes("--migrate");
+const overrideLive = args.includes("--override");
 const printOnly = args.includes("--print");
 
 async function migrateLegacy(token) {
@@ -42,7 +45,7 @@ async function migrateLegacy(token) {
 
 (async () => {
   if (printOnly) {
-    console.log(JSON.stringify(buildSimulationBulletin(), null, 2));
+    console.log(JSON.stringify(buildSimulationBulletin(new Date(), { overrideLive }), null, 2));
     return;
   }
 
@@ -58,11 +61,15 @@ async function migrateLegacy(token) {
     console.log("Simulation OFF (bulletins/simulation inactive).");
   } else {
     await setDoc(token, PROJECT, "bulletins", "simulation", {
-      ...buildSimulationBulletin(),
+      ...buildSimulationBulletin(new Date(), { overrideLive }),
       postedAt: nowTs(),
       updatedAt: nowTs(),
     });
-    console.log("Simulation ON — bulletins/simulation written (Ondoy, badged SIMULATION).");
+    console.log(
+      `Simulation ON — bulletins/simulation written (Ondoy, badged SIMULATION)${
+        overrideLive ? ", overriding any live storm" : ""
+      }.`
+    );
   }
 
   if (migrate) await migrateLegacy(token);

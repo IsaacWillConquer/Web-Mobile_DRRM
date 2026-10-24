@@ -3,7 +3,7 @@ import AppShell from "../../components/AppShell";
 import * as reportsService from "../../core/services/reportsService";
 import * as rescueRecordsService from "../../core/services/rescueRecordsService";
 import { watchAllUsers } from "../../core/services/usersService";
-import { Badge, Button, Card, EmptyState, Icon, Spinner } from "../../components/ui";
+import { Button, Card, EmptyState, Icon, Spinner } from "../../components/ui";
 import {
   AreaTrend,
   Bars,
@@ -13,7 +13,13 @@ import {
 } from "../../components/charts";
 import { CHART_COLORS, PALETTE } from "../../components/chartColors";
 import { DISASTER_TYPES } from "../../config/appConfig";
-import { statusChip } from "../dispatch/constants";
+import {
+  AGE_BUCKETS,
+  ageBucket,
+  formatDuration,
+  isActiveStatus,
+  statusChip,
+} from "../dispatch/constants";
 
 const OPEN_STATUSES = [
   "Submitted",
@@ -38,12 +44,6 @@ const STATUS_COLORS = {
   Cancelled: CHART_COLORS.red,
 };
 
-const PRIORITY_COLORS = {
-  high: CHART_COLORS.red,
-  medium: CHART_COLORS.amber,
-  low: CHART_COLORS.emerald,
-};
-
 const RANGES = [
   { id: "7d", label: "7 days" },
   { id: "30d", label: "30 days" },
@@ -66,21 +66,12 @@ function formatDateTime(ts) {
   return d ? d.toLocaleString() : "—";
 }
 
-function formatDuration(ms) {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
-  const minutes = ms / 60000;
-  if (minutes < 60) return `${Math.round(minutes)}m`;
-  const hours = minutes / 60;
-  if (hours < 24) return `${hours.toFixed(1)}h`;
-  return `${(hours / 24).toFixed(1)}d`;
-}
-
 function toCsv(rows, rescuedByReport = {}) {
   const headers = [
     "id",
     "disasterType",
     "status",
-    "priority",
+    "waitingMinutes",
     "peopleAffected",
     "peopleRescued",
     "area",
@@ -96,7 +87,7 @@ function toCsv(rows, rescuedByReport = {}) {
         r.id,
         r.disasterType,
         r.status,
-        r.priority,
+        isActiveStatus(r.status) ? Math.round((r._waitingMs ?? 0) / 60000) : "",
         r.peopleAffected,
         rescuedByReport[r.id] ?? "",
         r._area,
@@ -174,8 +165,17 @@ export default function DmoPage() {
   }, [range]);
 
   const scoped = useMemo(() => {
+    const now = Date.now();
     return reports
-      .map((r) => ({ ...r, _date: tsToDate(r.createdAt), _area: areaOf(r) }))
+      .map((r) => {
+        const date = tsToDate(r.createdAt);
+        return {
+          ...r,
+          _date: date,
+          _area: areaOf(r),
+          _waitingMs: date ? Math.max(0, now - date.getTime()) : 0,
+        };
+      })
       .filter((r) => {
         if (typeFilter !== "all" && r.disasterType !== typeFilter) return false;
         if (rangeStart && (!r._date || r._date < rangeStart)) return false;
@@ -186,7 +186,6 @@ export default function DmoPage() {
 
   const stats = useMemo(() => {
     const byStatus = {};
-    const byPriority = { high: 0, medium: 0, low: 0 };
     const byType = {};
     const byArea = {};
     let people = 0;
@@ -203,7 +202,6 @@ export default function DmoPage() {
 
     scoped.forEach((r) => {
       byStatus[r.status ?? "Unknown"] = (byStatus[r.status ?? "Unknown"] ?? 0) + 1;
-      if (byPriority[r.priority] != null) byPriority[r.priority] += 1;
       byType[r.disasterType ?? "Other"] = (byType[r.disasterType ?? "Other"] ?? 0) + 1;
       if (!byArea[r._area]) byArea[r._area] = { reports: 0, people: 0 };
       byArea[r._area].reports += 1;
@@ -220,10 +218,15 @@ export default function DmoPage() {
       .sort((a, b) => b[1] - a[1])
       .map(([label, value]) => ({ label, value, color: STATUS_COLORS[label] ?? CHART_COLORS.slate }));
 
-    const priorityData = ["high", "medium", "low"].map((p) => ({
-      label: p,
-      value: byPriority[p],
-      color: PRIORITY_COLORS[p],
+    const byAge = { critical: 0, urgent: 0, recent: 0, new: 0 };
+    scoped.forEach((r) => {
+      if (!isActiveStatus(r.status)) return;
+      byAge[ageBucket(r._waitingMs).key] += 1;
+    });
+    const ageData = AGE_BUCKETS.map((b) => ({
+      label: b.label,
+      value: byAge[b.key],
+      color: b.color,
     }));
 
     const typeData = Object.entries(byType)
@@ -288,7 +291,7 @@ export default function DmoPage() {
         .sort((a, b) => (b._date?.getTime() ?? 0) - (a._date?.getTime() ?? 0))
         .slice(0, 10),
       statusData,
-      priorityData,
+      ageData,
       typeData,
       areaData,
       trendData,
@@ -500,11 +503,11 @@ export default function DmoPage() {
             </Card>
 
             <Card className="p-6">
-              <h3 className="mb-4 font-semibold text-slate-900">Reports by priority</h3>
+              <h3 className="mb-4 font-semibold text-slate-900">Open reports by waiting time</h3>
               <div className="flex flex-col items-center gap-6 sm:flex-row">
-                <Donut data={stats.priorityData} centerLabel="Total" />
+                <Donut data={stats.ageData} centerLabel="Open" />
                 <div className="w-full flex-1">
-                  <DonutLegend data={stats.priorityData} />
+                  <DonutLegend data={stats.ageData} />
                 </div>
               </div>
             </Card>
@@ -598,7 +601,7 @@ export default function DmoPage() {
                     <th className="px-6 py-3 font-medium">Type</th>
                     <th className="px-6 py-3 font-medium">Area</th>
                     <th className="px-6 py-3 font-medium">Status</th>
-                    <th className="px-6 py-3 font-medium">Priority</th>
+                    <th className="px-6 py-3 font-medium">Waiting</th>
                     <th className="px-6 py-3 font-medium">People</th>
                     <th className="px-6 py-3 font-medium">Submitted</th>
                   </tr>
@@ -617,17 +620,16 @@ export default function DmoPage() {
                           <span className={statusChip(r.status)}>{r.status ?? "—"}</span>
                         </td>
                         <td className="px-6 py-3">
-                          <Badge
-                            className={`capitalize ${
-                              r.priority === "high"
-                                ? "bg-red-100 text-red-700"
-                                : r.priority === "medium"
-                                  ? "bg-amber-100 text-amber-800"
-                                  : "bg-emerald-100 text-emerald-700"
-                            }`}
-                          >
-                            {r.priority ?? "—"}
-                          </Badge>
+                          {isActiveStatus(r.status) ? (
+                            <span
+                              className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+                              style={{ background: ageBucket(r._waitingMs).color }}
+                            >
+                              {formatDuration(r._waitingMs)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="px-6 py-3 tabular-nums text-slate-600">
                           {r.peopleAffected ?? "—"}

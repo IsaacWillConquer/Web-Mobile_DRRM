@@ -44,20 +44,23 @@ No server. No Postgres. Images via Cloudinary (free). Maps via OpenStreetMap.
 2. Resident submits a report — disaster type, GPS location (+ manual pin), **up to 3 photos**, description.
 3. Resident marks the report **for myself** or **for someone else** (captures victim details).
 4. Nearby reports group into a **cluster** (duplicate/nearby detection).
-5. Dispatcher sees reports/clusters on a **live map**, verifies + sets **priority**.
+5. Dispatcher sees reports/clusters on a **live map**, verifies + triages. **Rescue priority
+   follows submission time — the oldest active report is rescued first** (no severity input).
 6. Dispatcher creates **rescue teams** and **assigns** one to a cluster.
 7. Rescue team accepts, updates status, records people rescued + outcome.
 8. Status changes flow back; the reporter gets **notifications**.
 9. DMO views incident **stats/reports**.
 
-## Resilience (offline + SMS)
+## Resilience (offline + SMS) — optional / roadmap
 
-- **Offline-first (mobile):** reports and photos are queued locally and sync when the connection
-  returns; cached map tiles keep the map usable; an offline banner + "pending sync" badge make the
-  state clear. Reports are never lost in a dead zone.
-- **SMS fallback:** with no data at all, the resident can tap **Send via SMS** — the native
-  composer opens pre-filled to the LDRRMO hotline with coordinates + a short description. Free,
-  serverless, and works over the cellular network.
+> **Status: not implemented yet.** These are optional stretch goals; the shipped app needs
+> connectivity. With no data, residents should call the LDRRMO hotline. See
+> [`docs/DEFENSE_NOTES.md`](docs/DEFENSE_NOTES.md) §4 for the honest gap list.
+
+- **Offline-first (mobile) — planned:** queue reports and photos locally and sync on reconnect;
+  cached map tiles keep the map usable; an offline banner + "pending sync" badge.
+- **SMS fallback — planned:** a **Send via SMS** button opens the native composer pre-filled to the
+  LDRRMO hotline with coordinates + a short description (free, serverless, works over cellular).
 
 ## Reference (read-only)
 

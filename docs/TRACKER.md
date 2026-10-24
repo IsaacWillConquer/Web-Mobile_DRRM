@@ -18,7 +18,7 @@ IT 305 · Bulacan State University · **Submit: Nov 2, 2026**
   OpenFreeMap (Positron/Bright) as keyless fallbacks. Web: Leaflet. Key kept in gitignored `map_config.dart`.
 - **Hazard overlays:** Typhoons (JMA, Firestore), Storm Signals (PAGASA TCWS, admin-entered),
   Rain Forecast (Open-Meteo). Hazards (flood/landslide) = UI-only stub (real data 486 MB–2.7 GB).
-- **Notifications:** FCM
+- **Notifications:** in-app Firestore fan-out (web bell + toast/sound, mobile bell); **FCM push = future work**
 - **Contact/victim details:** user **profile** (`users`) **+** per-report staff-only `reportContacts/{reportId}`
   (resident can report for self or someone else)
 - **Mobile auth:** **phone + password** (`+63`), synthetic `63…@drrm.local` Auth identifier; full profile
@@ -27,7 +27,7 @@ IT 305 · Bulacan State University · **Submit: Nov 2, 2026**
   detection, manual address entry, offline banner + pending-sync badge
 - **SMS:** **outbound fallback only** — native composer prefilled to the LDRRMO hotline with
   coordinates + short description (free, serverless, works with zero data)
-- **AI:** none (not a spec requirement) → rule-based prioritization
+- **AI:** none — rule-based; **rescue priority = submission time (oldest active report first)**
 - **Reference only (not modified, not imported):** `FinalProject_AWA/`, `agap.ai/`
 - **Dropped as unnecessary:** 2FA, face, biometrics, QR, wallet, check-in, ID card, i18n, PWA, voice/TTS
 
@@ -67,17 +67,17 @@ FinalProject_DRRM/
 
 | Collection | Key fields |
 |---|---|
-| `users/{uid}` | email, name, phone, role, active, teamId?, profile{gender, age, disabilities, address, household}, createdAt |
-| `reports/{id}` | reporterId, onBehalfOf('self'\|'other'), lat, lng, geohash, disasterType, description, imageUrls[], status, priority, peopleAffected, clusterId, verifiedBy, history[], createdAt |
+| `users/{uid}` | email, name, phone, role, active, teamId?, profile{birthdate, disability[], address, household}, createdAt |
+| `reports/{id}` | reporterId, onBehalfOf('self'\|'other'), lat, lng, geohash, disasterType, description, imageUrls[], status, priority(legacy), teamId, backupTeamIds[], peopleAffected, clusterId, verifiedBy, history[], createdAt |
 | `reportContacts/{reportId}` | subject('self'\|'other'), victimName, victimContact, relationship, peopleCount, specialNeeds[], notes — **staff-only PII** |
 | `clusters/{id}` | center, cell/geohash, reportIds[], priority, status, reportCount, peopleAffected |
-| `teams/{id}` | name, contact, base{lat,lng}, status, memberUids[] |
-| `assignments/{id}` | reportId/clusterId, teamId, status, dispatchedBy, notes, timestamps |
+| `teams/{id}` | name, contact, status, memberUids[] |
+| `assignments/{id}` | reportId/clusterId, teamId, status(dispatched→accepted→in_progress→completed \| declined \| cancelled), backup, dispatchedBy, notes, timestamps |
 | `rescueRecords/{id}` | assignmentId, peopleRescued, outcome, notes |
 | `notifications/{id}` | userId, title, body, read, createdAt |
 | `logs/{id}` | uid, action, details, createdAt |
 
-Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire2`).
+Geo/nearby + duplicate detection via a **custom geohash encoder + client-side grid** (no PostGIS, no external geo library). Rescue priority is **time-based** (oldest active report first); the stored `priority` field is legacy.
 
 ---
 
@@ -117,7 +117,7 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 - [x] `active:false` enforced at login + in rules (disabled accounts lose access)
 
 ### P2 — Web admin/dispatch (Oct 18–23) — B
-- [x] Live map of reports (Leaflet + OpenStreetMap markers by priority)
+- [x] Live map of reports (MapLibre GL v5 + OpenFreeMap Positron; pins colored by waiting time + density mode)
 - [x] Verify + prioritize reports (detail panel, status/priority actions)
 - [x] Create teams + assign to a report (creates an assignment, sets status)
 - [x] Cluster-level assign + live progress tracking (suggested clusters + cluster dispatch)
@@ -215,6 +215,7 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
 | 2026-10-22 | seed | **Firestore seeding unblocked**: the Admin SDK key is IAM-denied, so `scripts/lib/firebase_rest.js` seeds via the **Firestore REST API using the Firebase CLI login** (`firebase login`) — no IAM change needed. Seeded `bulletins/active` (Ondoy) + `forecasts/rain`. Firestore **forbids nested arrays**, so the forecast `cone` is stored as a JSON string and `Typhoon.fromMap` parses both forms. `AppConfig.demoMode=false` (app now reads the live seeded feed). Also seeded **10 Bulacan rescue teams** + their `rescueTeam` accounts (`scripts/seed_rescue_teams.js`, Auth users via web API key, `teamId` set): Malolos, Calumpit, Hagonoy, Paombong, Guiguinto, Plaridel, Pulilan, Bustos, Baliwag, San Ildefonso. `flutter analyze` clean; APK rebuilt. |
 | 2026-10-22 | sim | **Full-activity simulation** (`scripts/seed_simulation.js`, `--clear`): 8 resident accounts (`<phone>@drrm.local` / `resident123`) with Bulacan addresses, a dispatcher + DMO staff account (`bulacan123`), and **26 reports** across the whole status funnel (Submitted/Verified/Awaiting/Team Assigned/Rescue in Progress/Resolved/Closed/Rejected/Duplicate/Cancelled) with `history[]`, 2 report contacts (PII), **2 clusters**, **11 assignments** (all statuses), **6 rescueRecords**, **32 notifications**, **56 audit logs** — so Dispatch, Responder, DMO, Activity and the bell all have live data. Verified back: 26 sim reports, 11 assignments, 24 users. |
 | 2026-10-22 | web-ui | **Web dashboard polish**: left **sidebar nav** + hamburger drawer (replaces top tabs); **web map migrated Leaflet → MapLibre GL v5 + OpenFreeMap Positron** (place-only labels, pins + density, click-select, flyTo) — pinned `maplibre-gl@^5` after a v6 load-event issue; **pagination** on Activity (15/page) and Staff (10/page); **cluster dropdown color fix** (`index.css` `color-scheme: light` + explicit select colors); **Teams search** + **nearest-team suggestion** in report & cluster assign (`geo.js` haversine — shows "Suggested: <team> · X km" and autoselects). Lint clean, build green. |
+| 2026-10-25 | web | **Time-based rescue queue** (oldest active report = #1; age-colored map/list, `Next rescue` badge, no manual priority) + **backup teams** (`reports.backupTeamIds` + backup assignments + rules PII gate) + **terminal handling** (reject/duplicate release teams, cancel open assignments, clear `teamId`/`backupTeamIds`, detail panel closes; `Active` list + map exclude terminal); DMO "open reports by waiting time" donut + `waitingMinutes` CSV; docs realigned, `docs/SYSTEM_FLOW.md` added. Lint + build green. |
 | 2026-10-23 | web-ui | **Notifications + admin users**: notification dropdown now **viewport-clamped** (`position: fixed`, clamped left, flips above when short on space — no more off-screen overflow from the sidebar/narrow drawer); **admin Users page** (admin-only `/admin/users`) with full CRUD for **mobile-only resident accounts** (create login via Identity Toolkit using the phone→`<digits>@drrm.local` identifier, edit name/email/address, enable/disable, delete; phone is the login identity and read-only after creation) + resident audit log actions; **new-report pop-up + sound** for dispatchers/admin (`ReportAlerts`: toast + Web Audio beep on a fresh `new_report` ping, click → Dispatch). Web lint/build green. |
 
 ---
@@ -230,3 +231,4 @@ Geo/nearby + duplicate detection via geohash (`geofire-common` / `geoflutterfire
   (phone, full name, gender | age, disabilities pill), **HOME ADDRESS** (city, barangay, street,
   address), **HOUSEHOLD** (house floors, pets pill); keep My Reports + sign-out. Show **N/A** for
   gender when absent (the register doesn't capture it yet).
+  

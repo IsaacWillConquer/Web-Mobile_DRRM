@@ -58,7 +58,7 @@ Map redesign first, **then** P4b (offline queue, offline tiles, SMS fallback).
 - **Simulation storm is demo-only**: never a silent fallback for real data.
   - Switched on/off by a **separate Firestore doc** (`bulletins/simulation`), no rebuild needed.
   - Always shows a **"SIMULATION" badge** on the card and chip.
-  - Real data is the default; the app prefers a real active storm.
+  - Real data is the default; the app prefers a real active storm. `seed_storm_sim.js --override` sets `overrideLive` so the simulation shows even while a real storm is active (for demos).
   - Simulation data is exempt from the stale warning.
 - **Storm signals:** entered by hand (PAGASA has no API) via Firestore console / seed script.
 - **Rain:** per **province** (~80 Open-Meteo calls per fetch), not per region.
@@ -68,6 +68,8 @@ Map redesign first, **then** P4b (offline queue, offline tiles, SMS fallback).
 - Forecast track: dashed line, labeled points (12H / 24H / 36H)
 - Cone of uncertainty: built in `fetch_typhoon.js` from JMA probability circles, stored in Firestore (JSON string, since Firestore forbids nested arrays), drawn by mobile and web
 - Wind radius: circle with dashed border
+- Markers only at **12H, 24H and the later day points** (JMA also publishes 3H…21H, too many to label); captions are `12H` style up to 24 h, then Philippine clock time (`Sun 8AM`)
+- Camera fit for Typhoons: the last 10 past-track points, all forecast points, the cone and the storm-force ring (the gale ring is excluded; it is huge)
 - Category markers: **PAGASA scale from wind speed** (km/h): TD ≤ 61 · TS 62–88 · STS 89–117 · TY 118–184 · STY ≥ 185; marker color ramps by category
 - Top chip shows name + wind; alert card has **View Details** (inline expand) and **Safety Tips** (static, rule-based sheet by signal level; no AI claims)
 
@@ -100,12 +102,12 @@ Keep the stripped **Positron** style, but stop stripping the place labels that h
 |---|---|---|
 | 1 | Camera fit (`camera_fit.dart`, `map_tab.dart`, tests) | Delivered — analyze clean, 12/12 tests pass; **awaiting device check of padding** |
 | 2a | Typhoon **data layer**: `typhoon_geo.js` (PAGASA classifier, cone builder, JMA parser), `storm_sim_data.js` + `seed_storm_sim.js` (`bulletins/simulation`), `fetch_typhoon.js` rewrite (cone, wind, stale-field cleanup, `--dry-run`/`--fixture`), `fetch-data.yml` fix, 13 Node tests | Delivered — Node tests pass; **awaiting your run + `fetch_typhoon.js --dry-run` against live JMA** |
-| 2b | Typhoon **rendering** (Flutter): per-point wind/category, past vs forecast split, cone, wind-radius ring, `12H · TS` markers, SIMULATION badge, read `bulletins/simulation` | Not started |
+| 2b | Typhoon **rendering** (Flutter): model + `pagasa.dart` classifier, past/forecast lines, cone, gale + storm-force rings, category markers, SIMULATION badge/chip, live-vs-simulation selection, camera fit update, 3 new Dart test files | Delivered — Node tests pass, Dart files syntax-checked only; **awaiting `flutter analyze` / `flutter test` + device check** |
 | 3 | Storm signals labels + legend | Not started |
 | 4 | Rain per province (+ find why it currently renders nothing) | Not started |
 | 5 | Alert card, layer sheet, status / stale / empty states | Not started |
 | 6 | Bottom nav visual refresh | Not started |
-| 7 | Web dispatch overlays (top-right controls, avoid the bottom-left priority legend) | Not started |
+| 7 | Web dispatch overlays (top-right controls, avoid the bottom-left rescue-queue legend) | Not started |
 
 ---
 
@@ -123,7 +125,7 @@ Keep the stripped **Positron** style, but stop stripping the place labels that h
 | Rain layer renders nothing | All 17 region names match the GeoJSON, so not a naming issue. Errors are swallowed (`_safe`, `clear()`) | Step 4 |
 | Signals labels may not show | No `textFont` set; default font may be missing from the Positron glyph set (verify on device) | Step 3 |
 | Secrets in the zip | `web/.env`, `map_config.dart` (MapTiler key), `google-services.json` are gitignored but were zipped. Restrict the MapTiler key to the app package | Manual |
-| Web map layout | Leaflet map, Pins/Density toggle top-right, priority legend bottom-left | Step 7 |
+| Web map layout | MapLibre GL, Pins/Density toggle top-right, rescue-queue legend bottom-left | Step 7 |
 
 ---
 
@@ -140,7 +142,7 @@ Keep the stripped **Positron** style, but stop stripping the place labels that h
 | `cone` | GeoJSON Polygon/MultiPolygon as a JSON **string**; the swept area of the forecast circles along the track (capsule union via `polygon-clipping`, so it hugs a curving path) |
 | `maxWindsKph` / `gustKph` / `pressureHpa` | wind at "now" (JMA 10-min sustained, converted from knots), gust, central pressure. `category` is derived from the wind with the PAGASA scale |
 | `jmaClass` | JMA's own class at "now" / per forecast point (`TY`, `STS`, `TS`, `TD`, `LOW`). `LOW` = extratropical low: show as LOW, not as a PAGASA category |
-| `simulation` / `demo` | only on `bulletins/simulation`; the live fetcher deletes them from `bulletins/active` |
+| `simulation` / `demo` / `overrideLive` | only on `bulletins/simulation`; the live fetcher deletes `simulation`/`demo` from `bulletins/active`. The app treats `demo: true` in `active` (old seeder) as a simulation too |
 
 Live-fetcher rules for `bulletins/active`: `signals` are kept (admin-entered) unless the doc was a demo/simulation, belonged to a different storm, or the storm ended.
 
@@ -151,8 +153,10 @@ Live-fetcher rules for `bulletins/active`: `signals` are kept (admin-entered) un
 - Exact rain thresholds in mm (current: ≥150 heavy, ≥50 moderate, else light)
 - Safety Tips wording per signal level
 - Whether the camera should re-fit when the alert card is expanded after a fit (not implemented)
-- **Forecast marker labels (step 2b):** JMA forecasts are 3H…24H every 3 h, then 45H/69H/93H (fixed UTC times), too many to label. Decide: which points get markers, and label as "+12H" or as a Philippine-time clock label
 - Details sheet (step 5) can also show movement and size: `specifications.json` has `course` (Japanese compass text), `speed`, and `scale`; not stored yet
 - Confirm the service account can write Firestore (role "Cloud Datastore User"); the seeders note the Admin SDK key was IAM-denied
-- Run `node seed_storm_sim.js --migrate` only after the app build that reads `bulletins/simulation` (step 2b) is installed
+- Run `node seed_storm_sim.js --migrate` once the step 2b app build is installed (it resets the old demo in `bulletins/active`)
+- `AppConfig.demoMode` still serves the old bundled Ondoy (`demo_data.dart`, full 2009 path); not updated because demo mode is off
+- The app caches the bulletin for 10 minutes: after flipping `bulletins/simulation`, restart the app (or wait) to see the change
+- Marker/ring font is `Noto Sans Bold` (the basemap glyph set); if labels do not draw on device, this is the first thing to check
 - Verify camera padding looks right on a real device (the `animateCamera(duration:)` and bounds API compile fine on `maplibre_gl` 0.27.1)

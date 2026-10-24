@@ -18,12 +18,43 @@ class StormSignal {
   }
 }
 
+/// A circle of wind of a given strength (gale-force or storm-force). Its centre
+/// is NOT necessarily the storm centre: JMA offsets it toward the stronger side.
+class WindArea {
+  const WindArea({
+    required this.lat,
+    required this.lng,
+    required this.radiusKm,
+  });
+
+  final double lat;
+  final double lng;
+  final double radiusKm;
+
+  static WindArea? tryParse(Object? value) {
+    if (value is! Map) return null;
+    final lat = value['lat'];
+    final lng = value['lng'];
+    final radius = value['radiusKm'];
+    if (lat is! num || lng is! num || radius is! num) return null;
+    return WindArea(
+      lat: lat.toDouble(),
+      lng: lng.toDouble(),
+      radiusKm: radius.toDouble(),
+    );
+  }
+}
+
 class TyphoonPoint {
   const TyphoonPoint({
     required this.lat,
     required this.lng,
     this.hours,
     this.label,
+    this.windKph,
+    this.jmaClass,
+    this.validAt,
+    this.radiusKm,
   });
 
   final double lat;
@@ -31,12 +62,28 @@ class TyphoonPoint {
   final int? hours;
   final String? label;
 
+  /// Sustained wind at this point (km/h), when the bulletin has one.
+  final int? windKph;
+
+  /// JMA's own class at this point (`TY`, `STS`, `TS`, `TD`, `LOW`).
+  final String? jmaClass;
+
+  /// When this forecast position is valid (UTC).
+  final DateTime? validAt;
+
+  /// Forecast uncertainty radius (km).
+  final double? radiusKm;
+
   factory TyphoonPoint.fromMap(Map<String, dynamic> map) {
     return TyphoonPoint(
       lat: (map['lat'] as num).toDouble(),
       lng: (map['lng'] as num).toDouble(),
       hours: (map['hours'] as num?)?.toInt(),
       label: map['label'] as String?,
+      windKph: (map['windKph'] as num?)?.toInt(),
+      jmaClass: map['jmaClass'] as String?,
+      validAt: _parseOptionalDate(map['validAt']),
+      radiusKm: (map['radiusKm'] as num?)?.toDouble(),
     );
   }
 }
@@ -57,6 +104,15 @@ class Typhoon {
     this.forecast = const [],
     this.cone,
     this.dangerRadiusKm,
+    this.preTrackCount = 0,
+    this.gustKph,
+    this.pressureHpa,
+    this.jmaClass,
+    this.galeArea,
+    this.stormArea,
+    this.analysisAt,
+    this.isSimulation = false,
+    this.overridesLive = false,
   });
 
   final String id;
@@ -73,6 +129,28 @@ class Typhoon {
   final List<TyphoonPoint> forecast;
   final Map<String, dynamic>? cone;
   final double? dangerRadiusKm;
+
+  /// How many leading [track] points are the depression stage (JMA
+  /// `preTyphoon`); drawn lighter than the rest.
+  final int preTrackCount;
+  final int? gustKph;
+  final int? pressureHpa;
+
+  /// JMA's own class right now (`TY`, `STS`, `TS`, `TD`, `LOW`).
+  final String? jmaClass;
+
+  /// Gale-force (>= 30 kt) and storm-force (>= 50 kt) wind circles.
+  final WindArea? galeArea;
+  final WindArea? stormArea;
+
+  /// Time of the current position (UTC).
+  final DateTime? analysisAt;
+
+  /// Demo-only storm: the UI badges it SIMULATION.
+  final bool isSimulation;
+
+  /// A simulation that should win over a live storm (set from the seeder).
+  final bool overridesLive;
 
   bool get hasSignals => signals.isNotEmpty;
   bool get hasTrack => track.isNotEmpty;
@@ -101,6 +179,16 @@ class Typhoon {
           .toList(growable: false),
       cone: _parseCone(data['cone']),
       dangerRadiusKm: (data['dangerRadiusKm'] as num?)?.toDouble(),
+      preTrackCount: _countPreTrack(rawTrack),
+      gustKph: (data['gustKph'] as num?)?.toInt(),
+      pressureHpa: (data['pressureHpa'] as num?)?.toInt(),
+      jmaClass: data['jmaClass'] as String?,
+      galeArea: WindArea.tryParse(data['galeArea']),
+      stormArea: WindArea.tryParse(data['stormArea']),
+      analysisAt: _parseOptionalDate(data['analysisAt']),
+      // `demo` is what the old seeder wrote into bulletins/active.
+      isSimulation: data['simulation'] == true || data['demo'] == true,
+      overridesLive: data['overrideLive'] == true,
     );
   }
 }
@@ -118,6 +206,26 @@ Map<String, dynamic>? _parseCone(Object? value) {
       return null;
     }
   }
+  return null;
+}
+
+// Depression-stage points come first in the stored track and carry `pre: true`.
+int _countPreTrack(List raw) {
+  var count = 0;
+  for (final entry in raw) {
+    if (entry is Map && entry['pre'] == true) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+
+DateTime? _parseOptionalDate(Object? value) {
+  if (value is Timestamp) return value.toDate().toUtc();
+  if (value is DateTime) return value.toUtc();
+  if (value is String) return DateTime.tryParse(value)?.toUtc();
   return null;
 }
 

@@ -67,20 +67,24 @@ means dispatch merged it into an earlier report.
 
 You triage incoming reports and run assignments.
 
-1. **Dashboard** — KPIs and the live map of reports (pins by priority; **density** mode shows
-   a heat grid). Filter by type/priority/status.
+1. **Dashboard** — KPIs and the live map of reports (pins colored by **waiting time**; **density**
+   mode shows a heat grid). Filter by type/status.
 2. **Verify queue** — new reports arrive as `Submitted`; the **bell** also pings you for each
    new report (mobile residents send "new report" notifications automatically).
 3. Open a report to:
    - **Verify** (marks `Verified`, records you as verifier) — or **Reject with a reason**
      (the reporter is notified with your reason).
-   - **Set priority** (`low`/`medium`/`high`) — the map and queues re-sort.
+   - **Priority is automatic** — the rescue queue is ordered by **submission time** (oldest
+     active report = **#1, "Next rescue"**); pins and the list are colored by waiting time. There
+     is no manual severity to set.
    - **Mark as duplicate** — duplicate candidates are flagged automatically (same type within
      ~110 m in the last 24 h); confirm to merge them into the original.
    - **Close** — once a report is `Resolved`, close it to archive it.
 4. **Assign a team**:
    - Single report: pick (or create) a team → **Assign**. Status becomes `Team Assigned`; the
      team's status flips to `assigned`; the team is notified.
+   - **Backup team:** while a report is already `Team Assigned`/`Rescue in Progress`, use **Add
+     backup team** to dispatch an additional team to the same incident.
    - Cluster: group nearby reports into a **suggested cluster**, then assign one team to the
      whole cluster with live progress tracking.
 5. **Contact details (PII)** — the victim/contact panel is visible to you here; rescue teams
@@ -101,7 +105,8 @@ You triage incoming reports and run assignments.
 
 - KPIs: reports, reporters, resolve rate, **avg time-to-verify / time-to-resolve**, people
   affected/rescued.
-- Charts: type & priority bars, status donut, reports over time, **reports by area**
+- Charts: type bars, status donut, **open reports by waiting time**, reports over time,
+  **reports by area**
   (barangay/city from reporter profiles), rescue outcomes.
 - Filters: date range + disaster type.
 - **Export**: CSV and PDF for any view.

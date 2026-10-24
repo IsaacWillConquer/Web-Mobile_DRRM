@@ -44,9 +44,11 @@ service cloud.firestore {
     // PII (§8): a rescue team member may access a report's victim/contact details
     // only once their team (users/{uid}.teamId) is assigned to that report.
     function isAssignedToReport(reportId) {
+      let report = get(/databases/$(database)/documents/reports/$(reportId)).data;
+      let teamId = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId;
       return isSignedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId
-           == get(/databases/$(database)/documents/reports/$(reportId)).data.teamId;
+        && teamId != null
+        && (teamId == report.teamId || teamId in report.get('backupTeamIds', []));
     }
     // Residents may raise a fixed-shape "new report" ping to dispatchers/admins
     // about their own report — nothing else.

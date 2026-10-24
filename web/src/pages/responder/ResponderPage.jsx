@@ -26,6 +26,7 @@ const ASSIGNMENT_FLOW = {
   in_progress: { label: "En route", tone: "bg-amber-100 text-amber-800" },
   completed: { label: "Completed", tone: "bg-emerald-100 text-emerald-800" },
   declined: { label: "Declined", tone: "bg-slate-200 text-slate-600" },
+  cancelled: { label: "Cancelled", tone: "bg-slate-200 text-slate-600" },
 };
 
 const FILTERS = ["active", "completed", "all"];
@@ -79,7 +80,9 @@ export default function ResponderPage() {
   const filtered = useMemo(() => {
     if (filter === "all") return assignments;
     if (filter === "completed") return assignments.filter((a) => a.status === "completed");
-    return assignments.filter((a) => a.status !== "completed" && a.status !== "declined");
+    return assignments.filter(
+      (a) => a.status !== "completed" && a.status !== "declined" && a.status !== "cancelled",
+    );
   }, [assignments, filter]);
 
   async function accept(assignment) {
@@ -178,8 +181,9 @@ export default function ResponderPage() {
 
   const counts = useMemo(
     () => ({
-      active: assignments.filter((a) => a.status !== "completed" && a.status !== "declined")
-        .length,
+      active: assignments.filter(
+        (a) => a.status !== "completed" && a.status !== "declined" && a.status !== "cancelled",
+      ).length,
       completed: assignments.filter((a) => a.status === "completed").length,
       all: assignments.length,
     }),
@@ -310,8 +314,10 @@ export default function ResponderPage() {
                     </span>
                   ) : null}
 
-                  {assignment.status === "declined" ? (
-                    <span className="text-sm text-slate-400">Declined</span>
+                  {assignment.status === "declined" || assignment.status === "cancelled" ? (
+                    <span className="text-sm text-slate-400">
+                      {ASSIGNMENT_FLOW[assignment.status]?.label ?? assignment.status}
+                    </span>
                   ) : null}
                 </div>
               </Card>

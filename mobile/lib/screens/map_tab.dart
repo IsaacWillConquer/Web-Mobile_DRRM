@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderBox;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -11,6 +10,7 @@ import '../core/camera_fit.dart';
 import '../core/location.dart';
 import '../core/overlay_renderer.dart';
 import '../core/overlays.dart';
+import '../core/pagasa.dart';
 import '../core/province_lookup.dart';
 import '../core/rain_service.dart';
 import '../core/signal_resolver.dart';
@@ -457,9 +457,12 @@ class _TyphoonChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final winds = typhoon.maxWindsKph;
-    final label = winds == null
-        ? typhoon.name.toUpperCase()
-        : '${typhoon.name.toUpperCase()} · $winds km/h';
+    final code = markerCode(windKph: winds, jmaClass: typhoon.jmaClass);
+    final label = [
+      typhoon.name.toUpperCase(),
+      if (winds != null) '$winds km/h',
+      if (code != null) code,
+    ].join(' · ');
     return Material(
       elevation: 3,
       borderRadius: BorderRadius.circular(24),
@@ -486,6 +489,18 @@ class _TyphoonChip extends StatelessWidget {
                 color: Color(0xFF1F2937),
               ),
             ),
+            if (typhoon.isSimulation) ...[
+              const SizedBox(width: 8),
+              const Text(
+                'SIMULATION',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                  color: Color(0xFF92400E),
+                ),
+              ),
+            ],
           ],
         ),
       ),

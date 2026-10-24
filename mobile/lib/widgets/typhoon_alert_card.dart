@@ -116,6 +116,10 @@ class _TyphoonAlertCardState extends State<TyphoonAlertCard> {
                                     color: _darkRed,
                                   ),
                                 ),
+                                if (widget.typhoon.isSimulation) ...[
+                                  const SizedBox(height: 6),
+                                  const _SimulationBadge(),
+                                ],
                                 if (widget.signal != null) ...[
                                   const SizedBox(height: 8),
                                   _SignalBadge(level: widget.signal!.level),
@@ -459,6 +463,8 @@ class _InfoPanel extends StatelessWidget {
     final rows = <_InfoRowData>[
       _InfoRowData(Icons.warning_amber_rounded, 'Name', typhoon.name),
       _InfoRowData(Icons.local_offer_outlined, 'Category', typhoon.category),
+      if (typhoon.maxWindsKph != null)
+        _InfoRowData(Icons.air, 'Winds', _formatWinds(typhoon)),
       if (signal != null)
         _InfoRowData(
           Icons.speed,
@@ -483,6 +489,37 @@ class _InfoPanel extends StatelessWidget {
               const Divider(height: 1, thickness: 1, color: _divider),
           ],
         ],
+      ),
+    );
+  }
+}
+
+String _formatWinds(Typhoon typhoon) {
+  final gust = typhoon.gustKph;
+  final winds = '${typhoon.maxWindsKph} km/h';
+  return gust == null ? winds : '$winds · gusts $gust';
+}
+
+class _SimulationBadge extends StatelessWidget {
+  const _SimulationBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFF59E0B)),
+      ),
+      child: const Text(
+        'SIMULATION',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
+          color: Color(0xFF92400E),
+        ),
       ),
     );
   }

@@ -9,11 +9,18 @@ import * as clustersService from "../../core/services/clustersService";
 import { createNotification } from "../../core/services/notificationsService";
 import { getReportContact } from "../../core/services/reportContactsService";
 import { displayName, setUserTeam, watchAllUsers } from "../../core/services/usersService";
-import { DISASTER_TYPES, PRIORITIES } from "../../config/appConfig";
+import { DISASTER_TYPES } from "../../config/appConfig";
 import ReportMap from "./ReportMap";
 import { findDuplicates } from "./duplicates";
 import { nearestTeam } from "./geo";
-import { PRIORITY_COLORS, statusChip } from "./constants";
+import {
+  AGE_BUCKETS,
+  ageBucket,
+  formatDuration,
+  isActiveStatus,
+  statusChip,
+  tsMillis,
+} from "./constants";
 import {
   Alert,
   Badge,
@@ -32,15 +39,6 @@ function formatDate(ts) {
   return date.toLocaleString();
 }
 
-const ACTIVE_STATUSES = [
-  "Submitted",
-  "Under Verification",
-  "Verified",
-  "Awaiting Assignment",
-  "Team Assigned",
-  "Rescue in Progress",
-];
-
 // A report can only be verified from a pre-verified state. Verifying an already
 // verified report is a no-op, which keeps the status timeline free of repeated
 // "Verified" entries when the button is tapped more than once.
@@ -48,10 +46,18 @@ function canVerify(status) {
   return status === "Submitted" || status === "Under Verification";
 }
 
-const PRIORITY_RANK = { low: 0, medium: 1, high: 2 };
-
 function cellKey(report) {
   return `${report.lat.toFixed(2)},${report.lng.toFixed(2)}`;
+}
+
+// Time-based queues: oldest submission first.
+function byOldest(a, b) {
+  const am = tsMillis(a.createdAt);
+  const bm = tsMillis(b.createdAt);
+  if (am == null && bm == null) return 0;
+  if (am == null) return 1;
+  if (bm == null) return -1;
+  return am - bm;
 }
 
 function buildClusters(reports) {
@@ -61,23 +67,30 @@ function buildClusters(reports) {
     if (r.clusterId) return;
     const key = cellKey(r);
     if (!cells[key]) {
-      cells[key] = { key, lat: 0, lng: 0, reports: [], priority: "low" };
+      cells[key] = { key, lat: 0, lng: 0, reports: [], oldestMs: null };
     }
     const cell = cells[key];
     cell.lat += r.lat;
     cell.lng += r.lng;
     cell.reports.push(r);
-    if (PRIORITY_RANK[r.priority] > PRIORITY_RANK[cell.priority]) cell.priority = r.priority;
+    const ms = tsMillis(r.createdAt);
+    if (ms != null && (cell.oldestMs == null || ms < cell.oldestMs)) cell.oldestMs = ms;
   });
+  const now = Date.now();
   return Object.values(cells)
-    .map((c) => ({
-      ...c,
-      lat: c.lat / c.reports.length,
-      lng: c.lng / c.reports.length,
-      count: c.reports.length,
-      people: c.reports.reduce((sum, r) => sum + (Number(r.peopleAffected) || 0), 0),
-    }))
-    .sort((a, b) => b.count - a.count);
+    .map((c) => {
+      const waitingMs = c.oldestMs != null ? Math.max(0, now - c.oldestMs) : 0;
+      return {
+        ...c,
+        lat: c.lat / c.reports.length,
+        lng: c.lng / c.reports.length,
+        count: c.reports.length,
+        people: c.reports.reduce((sum, r) => sum + (Number(r.peopleAffected) || 0), 0),
+        waitingMs,
+        age: ageBucket(waitingMs),
+      };
+    })
+    .sort((a, b) => b.waitingMs - a.waitingMs || b.count - a.count);
 }
 
 function useReports() {
@@ -151,7 +164,7 @@ export default function DispatchPage() {
   const users = useUsers();
 
   const [tab, setTab] = useState("reports");
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("active");
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(null);
   const [mapMode, setMapMode] = useState("pins");
@@ -163,7 +176,11 @@ export default function DispatchPage() {
   const filtered = useMemo(
     () =>
       reports.filter((r) => {
-        if (filter !== "all" && r.status !== filter) return false;
+        if (filter === "active" || filter === "all") {
+          if (!isActiveStatus(r.status)) return false;
+        } else if (r.status !== filter) {
+          return false;
+        }
         if (typeFilter !== "all" && r.disasterType !== typeFilter) return false;
         return true;
       }),
@@ -178,19 +195,43 @@ export default function DispatchPage() {
     return map;
   }, [reports]);
   const suggested = useMemo(
-    () => buildClusters(reports.filter((r) => ACTIVE_STATUSES.includes(r.status))).filter((c) => c.count >= 2),
+    () =>
+      buildClusters(reports.filter((r) => isActiveStatus(r.status))).filter((c) => c.count >= 2),
     [reports],
   );
   const duplicates = useMemo(() => findDuplicates(reports), [reports]);
 
+  // Rescue queue: oldest active report is #1. Recomputed live as reports are
+  // resolved/closed — priority comes only from submission time, never severity.
+  const queue = useMemo(() => {
+    const sorted = reports.filter((r) => isActiveStatus(r.status)).sort(byOldest);
+    const now = Date.now();
+    const rankById = {};
+    const waitingById = {};
+    sorted.forEach((r, i) => {
+      rankById[r.id] = i + 1;
+      const ms = tsMillis(r.createdAt);
+      waitingById[r.id] = ms != null ? Math.max(0, now - ms) : 0;
+    });
+    return { rankById, waitingById, total: sorted.length };
+  }, [reports]);
+
+  const sortedFiltered = useMemo(() => [...filtered].sort(byOldest), [filtered]);
+  const mapReports = useMemo(
+    () => sortedFiltered.filter((r) => isActiveStatus(r.status)),
+    [sortedFiltered],
+  );
+
   const markDuplicate = (report) =>
     run(async () => {
+      await releaseTeams(report);
       await reportsService.updateReportStatus(report.id, "Duplicate", user.uid);
       await logAction(user.uid, "report_duplicate", {
         reportId: report.id,
         duplicateOf: duplicates.get(report.id)?.of ?? null,
       });
       setNotice("Report marked as duplicate.");
+      setSelectedId(null);
     });
 
   async function run(fn) {
@@ -216,6 +257,17 @@ export default function DispatchPage() {
     }).catch(() => {});
   }
 
+  // Free any teams assigned to a report and cancel its open assignments — used
+  // when an incident is rejected or marked duplicate so it leaves no residue.
+  async function releaseTeams(report) {
+    const teamIds = [report.teamId, ...(report.backupTeamIds ?? [])].filter(Boolean);
+    await Promise.all(
+      teamIds.map((id) => teamsService.updateTeam(id, { status: "available" })),
+    );
+    await assignmentsService.cancelAssignmentsForReport(report.id, user.uid);
+    await reportsService.updateReport(report.id, { teamId: null, backupTeamIds: [] });
+  }
+
   const verify = (report) =>
     run(async () => {
       if (!canVerify(report.status)) {
@@ -231,6 +283,7 @@ export default function DispatchPage() {
 
   const reject = (report, reason) =>
     run(async () => {
+      await releaseTeams(report);
       await reportsService.updateReport(report.id, { rejectionReason: reason });
       await reportsService.updateReportStatus(report.id, "Rejected", user.uid);
       await notifyReporter(
@@ -241,6 +294,7 @@ export default function DispatchPage() {
       await logAction(user.uid, "report_reject", { reportId: report.id, reason });
       setNotice("Report rejected.");
       setRejecting(null);
+      setSelectedId(null);
     });
 
   const close = (report) =>
@@ -253,22 +307,7 @@ export default function DispatchPage() {
       );
       await logAction(user.uid, "report_close", { reportId: report.id });
       setNotice("Report closed.");
-    });
-
-  const setPriority = (report, priority) =>
-    run(async () => {
-      await reportsService.updateReport(report.id, { priority });
-      await logAction(user.uid, "report_priority", {
-        reportId: report.id,
-        from: report.priority,
-        to: priority,
-      });
-      await notifyReporter(
-        report,
-        "Priority updated",
-        `Your ${report.disasterType} report priority is now ${priority}.`,
-      );
-      setNotice(`Priority set to ${priority}.`);
+      setSelectedId(null);
     });
 
   const assign = (report, team) =>
@@ -287,6 +326,38 @@ export default function DispatchPage() {
       setNotice(`${team.name} assigned.`);
     });
 
+  // Add an additional (backup) team even when one is already dispatched or
+  // responding. Keeps the primary `teamId` and appends to `backupTeamIds`.
+  const assignBackup = (report, team) =>
+    run(async () => {
+      const existing = report.backupTeamIds ?? [];
+      if (team.id === report.teamId || existing.includes(team.id)) {
+        setNotice(`${team.name} is already assigned to this report.`);
+        return;
+      }
+      await assignmentsService.createAssignment({
+        reportId: report.id,
+        teamId: team.id,
+        status: "dispatched",
+        dispatchedBy: user.uid,
+        backup: true,
+      });
+      await reportsService.updateReport(report.id, {
+        backupTeamIds: [...existing, team.id],
+      });
+      await teamsService.updateTeam(team.id, { status: "assigned" });
+      await notifyReporter(
+        report,
+        "Backup rescue team assigned",
+        `${team.name} is also responding to your report.`,
+      );
+      await logAction(user.uid, "report_assign_backup", {
+        reportId: report.id,
+        teamId: team.id,
+      });
+      setNotice(`${team.name} added as backup.`);
+    });
+
   const assignCluster = (cluster, team) =>
     run(async () => {
       const created = await clustersService.createCluster({
@@ -295,7 +366,7 @@ export default function DispatchPage() {
         reportIds: cluster.reports.map((r) => r.id),
         reportCount: cluster.count,
         peopleAffected: cluster.people,
-        priority: cluster.priority,
+        priority: cluster.age?.key ?? "new",
         status: "open",
       });
       await assignmentsService.createAssignment({
@@ -338,7 +409,7 @@ export default function DispatchPage() {
     <AppShell
       wide
       title="Dispatch"
-      subtitle="Verify, prioritize, and assign rescue teams to incidents."
+      subtitle="Verify incidents and assign rescue teams — priority follows submission time (oldest first)."
       actions={
         <>
           <div className="flex rounded-full bg-white p-0.5 ring-1 ring-inset ring-slate-200">
@@ -366,21 +437,23 @@ export default function DispatchPage() {
       <div className="flex h-[calc(100vh-10rem)] min-h-[520px] gap-4">
         <div className="relative flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <ReportMap
-            reports={filtered}
+            reports={mapReports}
             selectedId={selectedId}
             onSelect={setSelectedId}
             mode={mapMode}
+            rankById={queue.rankById}
+            waitingById={queue.waitingById}
           />
           <div className="pointer-events-none absolute bottom-4 left-4 z-[500] rounded-xl bg-white/95 px-3 py-2 text-xs shadow-sm ring-1 ring-slate-900/5 backdrop-blur">
-            <p className="mb-1 font-semibold text-slate-700">Priority</p>
-            <div className="flex items-center gap-3">
-              {PRIORITIES.map((p) => (
-                <span key={p} className="inline-flex items-center gap-1 capitalize text-slate-500">
+            <p className="mb-1 font-semibold text-slate-700">Rescue queue · oldest first</p>
+            <div className="flex flex-col gap-1">
+              {AGE_BUCKETS.map((b) => (
+                <span key={b.key} className="inline-flex items-center gap-1 text-slate-500">
                   <span
                     className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{ background: PRIORITY_COLORS[p] }}
+                    style={{ background: b.color }}
                   />
-                  {p}
+                  {b.label}
                 </span>
               ))}
             </div>
@@ -433,24 +506,28 @@ export default function DispatchPage() {
               teams={teams}
               userById={users}
               duplicateOf={duplicates.get(selected.id) ?? null}
+              rank={queue.rankById[selected.id] ?? null}
+              waitingMs={queue.waitingById[selected.id] ?? null}
               busy={busy}
               onBack={() => setSelectedId(null)}
               onVerify={() => verify(selected)}
               onReject={() => setRejecting(selected)}
               onClose={() => close(selected)}
-              onPriority={(p) => setPriority(selected, p)}
               onAssign={(team) => assign(selected, team)}
+              onAssignBackup={(team) => assignBackup(selected, team)}
               onMarkDuplicate={() => markDuplicate(selected)}
               onOpenReport={setSelectedId}
             />
           ) : (
             <ReportList
-              reports={filtered}
+              reports={sortedFiltered}
               loading={loading}
               error={error}
               filter={filter}
               typeFilter={typeFilter}
               duplicates={duplicates}
+              rankById={queue.rankById}
+              waitingById={queue.waitingById}
               onFilter={setFilter}
               onTypeFilter={setTypeFilter}
               onSelect={setSelectedId}
@@ -478,11 +555,21 @@ function ReportList({
   filter,
   typeFilter,
   duplicates,
+  rankById,
+  waitingById,
   onFilter,
   onTypeFilter,
   onSelect,
 }) {
-  const statuses = ["all", "Submitted", "Verified", "Team Assigned", "Rescue in Progress", "Resolved"];
+  const statuses = [
+    "active",
+    "Submitted",
+    "Verified",
+    "Team Assigned",
+    "Rescue in Progress",
+    "Resolved",
+    "Closed",
+  ];
   return (
     <>
       <div className="space-y-2 border-b border-slate-200 px-3 py-3">
@@ -497,7 +584,7 @@ function ReportList({
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
-              {s === "all" ? "All" : s}
+              {s === "active" ? "Active" : s === "all" ? "All" : s}
             </button>
           ))}
         </div>
@@ -540,6 +627,11 @@ function ReportList({
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-slate-800">{r.disasterType}</span>
                     <div className="flex items-center gap-1">
+                      {rankById?.[r.id] === 1 ? (
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                          Next rescue
+                        </span>
+                      ) : null}
                       {duplicates?.has(r.id) ? (
                         <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                           Possible duplicate
@@ -550,11 +642,18 @@ function ReportList({
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.description}</p>
                   <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-                    <span
-                      className="inline-block h-2.5 w-2.5 rounded-full"
-                      style={{ background: PRIORITY_COLORS[r.priority] ?? "#94A3B8" }}
-                    />
-                    {r.priority ?? "—"} · {formatDate(r.createdAt)}
+                    {rankById?.[r.id] ? (
+                      <span
+                        className="rounded-full px-1.5 py-0.5 font-semibold text-white"
+                        style={{ background: ageBucket(waitingById?.[r.id]).color }}
+                      >
+                        #{rankById[r.id]}
+                      </span>
+                    ) : null}
+                    {isActiveStatus(r.status) ? (
+                      <span>{formatDuration(waitingById?.[r.id])} waiting</span>
+                    ) : null}
+                    <span>{formatDate(r.createdAt)}</span>
                   </div>
                 </button>
               </li>
@@ -571,13 +670,15 @@ function ReportDetail({
   teams,
   userById,
   duplicateOf,
+  rank,
+  waitingMs,
   busy,
   onBack,
   onVerify,
   onReject,
   onClose,
-  onPriority,
   onAssign,
+  onAssignBackup,
   onMarkDuplicate,
   onOpenReport,
 }) {
@@ -588,6 +689,7 @@ function ReportDetail({
   const [teamId, setTeamId] = useState(
     () => suggestedTeam?.team.id ?? teams[0]?.id ?? "",
   );
+  const [backupTeamId, setBackupTeamId] = useState("");
   const [contact, setContact] = useState(null);
 
   useEffect(() => {
@@ -602,7 +704,16 @@ function ReportDetail({
 
   const assignable = report.status === "Verified" || report.status === "Awaiting Assignment";
   const verifiable = canVerify(report.status);
+  const isActive = isActiveStatus(report.status);
   const reporter = userById?.[report.reporterId];
+  const canBackup =
+    Boolean(report.teamId) &&
+    (report.status === "Team Assigned" || report.status === "Rescue in Progress");
+  const assignedIds = new Set(
+    [report.teamId, ...(report.backupTeamIds ?? [])].filter(Boolean),
+  );
+  const backupOptions = teams.filter((t) => !assignedIds.has(t.id));
+  const teamName = (id) => teams.find((t) => t.id === id)?.name ?? id;
 
   return (
     <div className="flex-1 overflow-y-auto p-4">
@@ -654,7 +765,7 @@ function ReportDetail({
             <Button size="sm" variant="secondary" onClick={() => onOpenReport(duplicateOf.of)}>
               View original
             </Button>
-            <Button size="sm" variant="secondary" onClick={onMarkDuplicate} disabled={busy}>
+            <Button size="sm" variant="secondary" onClick={onMarkDuplicate} disabled={busy || !isActive}>
               Mark as duplicate
             </Button>
           </div>
@@ -690,22 +801,30 @@ function ReportDetail({
       ) : null}
 
       <div className="mt-5">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Priority</p>
-        <div className="flex gap-2">
-          {PRIORITIES.map((p) => (
-            <button
-              key={p}
-              disabled={busy}
-              onClick={() => onPriority(p)}
-              className={`rounded-full px-3 py-1 text-sm font-semibold capitalize disabled:opacity-60 ${
-                report.priority === p ? "text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-              style={report.priority === p ? { background: PRIORITY_COLORS[p] } : undefined}
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Rescue priority
+        </p>
+        {rank ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
+            <span
+              className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+              style={{ background: ageBucket(waitingMs).color }}
             >
-              {p}
-            </button>
-          ))}
-        </div>
+              #{rank}
+            </span>
+            <span>
+              in queue · waiting {formatDuration(waitingMs)}
+              {rank === 1 ? " · next rescue" : ""}
+            </span>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">
+            Not in the active rescue queue ({report.status}).
+          </p>
+        )}
+        <p className="mt-1 text-xs text-slate-400">
+          Priority is set by submission time — the oldest report is rescued first.
+        </p>
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -713,12 +832,12 @@ function ReportDetail({
           variant="success"
           onClick={onVerify}
           disabled={busy || !verifiable}
-          title={verifiable ? undefined : "Already verified"}
+          title={verifiable ? undefined : "This report is not awaiting verification."}
         >
           <Icon name="check" className="h-4 w-4" />
-          {verifiable ? "Verify" : "Verified"}
+          {report.status === "Verified" ? "Verified" : "Verify"}
         </Button>
-        <Button variant="dangerOutline" onClick={onReject} disabled={busy}>
+        <Button variant="dangerOutline" onClick={onReject} disabled={busy || !isActive}>
           Reject
         </Button>
         {report.status === "Resolved" ? (
@@ -731,12 +850,31 @@ function ReportDetail({
 
       <div className="mt-5 border-t border-slate-200 pt-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Assign rescue team
+          Assigned rescue teams
         </p>
-        {teams.length === 0 ? (
-          <p className="text-sm text-slate-500">No teams yet — create one in the Teams tab.</p>
+        {report.teamId ? (
+          <ul className="space-y-1">
+            <li className="flex items-center justify-between text-sm text-slate-700">
+              <span>{teamName(report.teamId)}</span>
+              <Badge className="bg-blue-100 text-blue-800">Primary</Badge>
+            </li>
+            {(report.backupTeamIds ?? []).map((id) => (
+              <li key={id} className="flex items-center justify-between text-sm text-slate-700">
+                <span>{teamName(id)}</span>
+                <Badge className="bg-slate-100 text-slate-600">Backup</Badge>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <div className="flex gap-2">
+          <p className="text-sm text-slate-500">No team assigned yet.</p>
+        )}
+
+        {teams.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">No teams yet — create one in the Teams tab.</p>
+        ) : null}
+
+        {teams.length > 0 && assignable ? (
+          <div className="mt-3 flex gap-2">
             <select
               value={teamId}
               onChange={(e) => setTeamId(e.target.value)}
@@ -750,7 +888,7 @@ function ReportDetail({
               ))}
             </select>
             <Button
-              disabled={busy || !assignable}
+              disabled={busy}
               onClick={() => {
                 const team = teams.find((t) => t.id === teamId);
                 if (team) onAssign(team);
@@ -759,7 +897,8 @@ function ReportDetail({
               Assign
             </Button>
           </div>
-        )}
+        ) : null}
+
         {assignable && suggestedTeam ? (
           <p className="mt-2 text-xs text-slate-500">
             Suggested:{" "}
@@ -767,12 +906,51 @@ function ReportDetail({
             {suggestedTeam.km.toFixed(1)} km from this report
           </p>
         ) : null}
-        {!assignable ? (
-          <p className="mt-2 text-xs text-slate-400">Verify the report before assigning.</p>
+
+        {teams.length > 0 && canBackup ? (
+          <div className="mt-3">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Add backup team
+            </p>
+            {backupOptions.length === 0 ? (
+              <p className="text-xs text-slate-400">All teams are already assigned.</p>
+            ) : (
+              <div className="flex gap-2">
+                <select
+                  value={backupTeamId}
+                  onChange={(e) => setBackupTeamId(e.target.value)}
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                >
+                  <option value="">Select backup team…</option>
+                  {backupOptions.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.status ?? "available"})
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="secondary"
+                  disabled={busy || !backupTeamId}
+                  onClick={() => {
+                    const team = backupOptions.find((t) => t.id === backupTeamId);
+                    if (team) {
+                      onAssignBackup(team);
+                      setBackupTeamId("");
+                    }
+                  }}
+                >
+                  Add backup
+                </Button>
+              </div>
+            )}
+          </div>
         ) : null}
-        {report.teamId ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Assigned team: {teams.find((t) => t.id === report.teamId)?.name ?? report.teamId}
+
+        {!assignable && !canBackup ? (
+          <p className="mt-2 text-xs text-slate-400">
+            {report.teamId
+              ? "This incident is no longer accepting assignments."
+              : "Verify the report before assigning."}
           </p>
         ) : null}
       </div>
@@ -799,10 +977,10 @@ function ClustersPanel({ suggested, clusters, reportById, teams, busy, onAssign 
                   {cluster.count} reports nearby
                 </span>
                 <span
-                  className="rounded-full px-2 py-0.5 text-xs font-semibold capitalize text-white"
-                  style={{ background: PRIORITY_COLORS[cluster.priority] }}
+                  className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+                  style={{ background: cluster.age.color }}
                 >
-                  {cluster.priority}
+                  {cluster.age.label}
                 </span>
               </div>
               <p className="mt-1 text-xs text-slate-500">

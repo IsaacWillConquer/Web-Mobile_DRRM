@@ -49,8 +49,10 @@ const SIGNALS = [
 const HOUR_MS = 3600 * 1000;
 
 /** Plain fields; the seeder adds postedAt/updatedAt. `cone` is a JSON string
- *  because Firestore forbids nested arrays. [now] is injectable for tests. */
-function buildSimulationBulletin(now = new Date()) {
+ *  because Firestore forbids nested arrays. [now] is injectable for tests.
+ *  `overrideLive` makes the app show the simulation even while a real storm is
+ *  active (for demos); by default the live storm wins. */
+function buildSimulationBulletin(now = new Date(), { overrideLive = false } = {}) {
   const here = TRACK[TRACK.length - 1];
   const cone = buildCone([
     { lat: here.lat, lng: here.lng, radiusKm: NOW_RADIUS_KM },
@@ -83,6 +85,7 @@ function buildSimulationBulletin(now = new Date()) {
     signals: SIGNALS,
     demo: true,
     simulation: true,
+    ...(overrideLive ? { overrideLive: true } : {}),
   };
 }
 

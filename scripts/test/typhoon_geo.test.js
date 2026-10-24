@@ -412,3 +412,9 @@ test("parseJmaForecast without specs: wind stays null with one warning", () => {
   assert.equal(p.jmaClass, null);
   assert.equal(p.warnings.length, 1);
 });
+
+test("simulation bulletin: the live storm wins unless overrideLive is requested", () => {
+  const now = new Date("2026-10-23T00:00:00Z");
+  assert.equal(buildSimulationBulletin(now).overrideLive, undefined);
+  assert.equal(buildSimulationBulletin(now, { overrideLive: true }).overrideLive, true);
+});

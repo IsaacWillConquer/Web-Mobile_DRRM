@@ -59,9 +59,10 @@ Relationships: 1 user → N reports (`reports.reporterId`); 1 user → N notific
 | `lat`, `lng` | number | GPS or map pin |
 | `imageUrls` | array<string> | Cloudinary URLs, **max 3** (rule-enforced) |
 | `status` | string | lifecycle below |
-| `priority` | string | `low` \| `medium` \| `high` |
+| `priority` | string | **legacy** (`low` \| `medium` \| `high`) — no longer drives ordering; rescue priority is **time-based** (oldest active report first, see §5) |
 | `peopleAffected` | number | |
-| `teamId` | string? | assigned team (drives PII gate) |
+| `teamId` | string? | **primary** assigned team (drives PII gate) |
+| `backupTeamIds` | array<string> | additional (**backup**) teams also granted PII access for this report |
 | `clusterId` | string? | set when assigned as a cluster |
 | `verifiedBy` | string? (uid) | set on `Verified` |
 | `rejectionReason` | string? | set on `Rejected` |
@@ -83,10 +84,13 @@ Team Assigned → Rescue in Progress → Resolved → Closed`, plus `Rejected` /
 | → `Resolved` | rescue team (complete → creates `rescueRecords` row) |
 | → `Closed` | dispatcher/admin (from `Resolved` only) |
 
-> **Known type inconsistency:** `history[].at` is written as an **epoch-ms number** by the web
-> (`arrayUnion` with `Date.now()`) and as an **ISO-8601 string** by the mobile submit path.
-> Web readers use a tolerant dual parser. R3-lite standardizes mobile to epoch ms; old mobile
-> rows keep ISO strings and the dual parser stays.
+> **`history[].at` type:** epoch-ms number. The web already wrote `Date.now()`; mobile was
+> standardized to epoch ms in R3-lite (2026-10-17). Old mobile rows may still hold ISO-8601
+> strings, so web readers keep a tolerant dual parser.
+>
+> **`Cancelled`** exists in the status enum and rules but has **no web action** yet (reserved;
+> only reachable via seeds). Terminal handling: rejecting or marking a report duplicate **releases
+> its teams** (back to `available`), cancels open assignments, and clears `teamId`/`backupTeamIds`.
 
 ### 2.3 `reportContacts/{reportId}` — doc id = report id (**PII**, §8 DPA)
 | Field | Type |
@@ -101,8 +105,8 @@ Team Assigned → Rescue in Progress → Resolved → Closed`, plus `Rejected` /
 | `updatedAt` | timestamp |
 
 Read access is the tightest in the system: staff (dispatcher/dmo/admin) always; the **assigned
-rescue team only while `users/{uid}.teamId == reports/{reportId}.teamId`**; the reporter may
-read their own submission's doc.
+rescue team only while `users/{uid}.teamId` equals `reports/{reportId}.teamId` (primary) or is in
+`reports/{reportId}.backupTeamIds`**; the reporter may read their own submission's doc.
 
 ### 2.4 `teams/{id}`
 `name` (string), `contact` (string phone), `status` (`available` \| `assigned`), `memberUids`
@@ -110,8 +114,10 @@ array<uid>, `createdAt` / `updatedAt`.
 
 ### 2.5 `assignments/{id}`
 `reportId`? (single-report dispatch) or `clusterId`? (cluster dispatch — one of the two),
-`teamId`, `status` (`dispatched → accepted → in_progress → completed`, terminal `declined`),
-`dispatchedBy` (uid), `updatedBy` (uid), `notes`, `createdAt` / `updatedAt`.
+`teamId`, `status` (`dispatched → accepted → in_progress → completed`, terminal `declined` /
+`cancelled`), `backup` (bool, true for an added backup team), `dispatchedBy` (uid),
+`updatedBy` (uid), `notes`, `createdAt` / `updatedAt`. Rejecting/duplicating a report sets its
+open assignments to `cancelled`.
 
 ### 2.6 `rescueRecords/{id}` — outcome records (1 per completed assignment)
 `assignmentId`, `reportId`?, `teamId`?, `peopleRescued` (number), `notes` (outcome narrative),
@@ -135,10 +141,12 @@ Two producer shapes:
 ### 2.9 `logs/{id}` — append-only audit (FR-13)
 `uid` (== auth uid, rule-enforced), `action` (string enum: `auth_login`, `auth_logout`,
 `web_login_blocked`, `staff_created`, `staff_role_changed`, `staff_active_changed`,
-`staff_deleted`, `report_verify`, `report_reject`, `report_priority`, `report_assign`,
-`cluster_assign`, `report_duplicate`, `report_close`, `team_create`, `assignment_accept`,
-`assignment_decline`, `assignment_start`, `assignment_complete`), `details` (map, free-form),
-`createdAt`. Update/delete forbidden by rules. Surfaced on the admin **Activity** page.
+`staff_deleted`, `resident_created`, `resident_updated`, `resident_active_changed`,
+`resident_deleted`, `report_verify`, `report_reject`, `report_assign`, `report_assign_backup`,
+`cluster_assign`, `report_duplicate`, `report_close`, `team_create`, `team_member_add`,
+`team_member_remove`, `assignment_accept`, `assignment_decline`, `assignment_start`,
+`assignment_complete`), `details` (map, free-form), `createdAt`. Update/delete forbidden by
+rules. Surfaced on the admin **Activity** page.
 
 ### 2.10 `config/dispatch` — single doc
 `dispatcherUids` array<uid> (kept in sync from Staff page), `updatedAt`. Readable by any
@@ -158,7 +166,7 @@ signed-in user (mobile needs it to route pings); admin-only writes.
 |---|---|---|---|---|
 | `users` | own; staff read all | self (forced `resident`+`active`); admin | self (not role/active); admin (not self) | admin (not self) |
 | `reports` | own; all responders | own, `Submitted`, ≤3 images, valid priority | staff (valid status/priority); owner (not status/priority); responders (status only) | dispatcher/admin |
-| `reportContacts` (PII) | staff; assigned team (`teamId` match); own | staff; own | staff; assigned team | dispatcher/admin |
+| `reportContacts` (PII) | staff; assigned team (primary `teamId` or `backupTeamIds`); own | staff; own | staff; assigned team | dispatcher/admin |
 | `clusters` / `teams` | responders | dispatcher/admin | dispatcher/admin | dispatcher/admin |
 | `assignments` | responders | dispatcher/admin | dispatcher/admin; rescue team | dispatcher/admin |
 | `rescueRecords` | responders | rescue team / dispatcher | dispatcher/admin | dispatcher/admin |
@@ -181,8 +189,11 @@ Role hierarchy: `resident < dispatcher < rescueTeam < dmo`, with `admin` as supe
 - **Geo:** coordinates are plain numbers (`lat`/`lng`); no GeoPoint, no PostGIS. Proximity and
   duplicate detection are **geohash/cell-grid approximations** (client-side): duplicates key on
   `disasterType + round3(lat), round3(lng)` ≈110 m cells within 24 h (FR-14); clusters/density
-  key on 2-decimal ≈1 km cells. R3-lite adds a `geohash` string on submit for future geoqueries.
-- **Timestamps:** `serverTimestamp()` everywhere except the `history[].at` dual-type noted above.
+  key on 2-decimal ≈1 km cells. A `geohash` string is written on submit (R3-lite, precision 8).
+- **Priority (time-based):** the web derives a rescue queue from `reports.createdAt` — the oldest
+  **active** (non-terminal) report is `#1` ("Next rescue"); aging buckets color the map and list.
+  `reports.priority` is **legacy** and does not affect ordering (see `docs/SYSTEM_FLOW.md` §7).
+- **Timestamps:** `serverTimestamp()` everywhere except `history[].at` (epoch-ms number, noted above).
 - **Images:** Cloudinary unsigned upload (mobile), only the `secure_url` strings persist in
   `reports.imageUrls`.
 - **No push tokens:** there is no FCM token collection — notifications are in-app (bell badge
