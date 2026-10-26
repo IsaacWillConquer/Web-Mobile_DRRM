@@ -76,6 +76,38 @@ export function Pagination({ page, pageCount, total, onPageChange, className }) 
   );
 }
 
+export function Pager({ page, pageCount, onPageChange, summary, className }) {
+  const safeCount = Math.max(1, pageCount);
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 text-sm",
+        className,
+      )}
+    >
+      <span className="text-slate-500">{summary}</span>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+        >
+          Prev
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={page >= safeCount}
+          onClick={() => onPageChange(page + 1)}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function Card({ className, ...props }) {
   return (
     <div
@@ -95,6 +127,185 @@ export function Badge({ className, children }) {
     >
       {children}
     </span>
+  );
+}
+
+const AVATAR_TONES = [
+  "bg-blue-100 text-blue-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-amber-100 text-amber-700",
+  "bg-violet-100 text-violet-700",
+  "bg-rose-100 text-rose-700",
+  "bg-cyan-100 text-cyan-700",
+  "bg-indigo-100 text-indigo-700",
+  "bg-teal-100 text-teal-700",
+];
+
+function initialsOf(name, email) {
+  const source = (name || email || "?").trim();
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
+
+function toneIndex(seed) {
+  let hash = 0;
+  const text = String(seed ?? "");
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return hash % AVATAR_TONES.length;
+}
+
+export function Avatar({ name, email, seed, className = "h-9 w-9 text-xs" }) {
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-full font-bold",
+        AVATAR_TONES[toneIndex(seed ?? name ?? email)],
+        className,
+      )}
+    >
+      {initialsOf(name, email)}
+    </span>
+  );
+}
+
+const PILL_TONES = {
+  blue: "bg-blue-50 text-blue-700 ring-blue-600/15",
+  indigo: "bg-indigo-50 text-indigo-700 ring-indigo-600/15",
+  violet: "bg-violet-50 text-violet-700 ring-violet-600/15",
+  amber: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  emerald: "bg-emerald-50 text-emerald-700 ring-emerald-600/15",
+  green: "bg-green-50 text-green-700 ring-green-600/15",
+  cyan: "bg-cyan-50 text-cyan-700 ring-cyan-600/15",
+  rose: "bg-rose-50 text-rose-700 ring-rose-600/15",
+  red: "bg-red-50 text-red-700 ring-red-600/15",
+  slate: "bg-slate-100 text-slate-600 ring-slate-500/15",
+};
+
+const DOT_TONES = {
+  blue: "bg-blue-500",
+  indigo: "bg-indigo-500",
+  violet: "bg-violet-500",
+  amber: "bg-amber-500",
+  emerald: "bg-emerald-500",
+  green: "bg-green-500",
+  cyan: "bg-cyan-500",
+  rose: "bg-rose-500",
+  red: "bg-red-500",
+  slate: "bg-slate-400",
+};
+
+export function StatusPill({ tone = "slate", dot = true, className, children }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset",
+        PILL_TONES[tone] ?? PILL_TONES.slate,
+        className,
+      )}
+    >
+      {dot ? (
+        <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT_TONES[tone] ?? DOT_TONES.slate)} />
+      ) : null}
+      {children}
+    </span>
+  );
+}
+
+export function FilterChips({ options, value, onChange, className }) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+      {options.map((option) => {
+        const active = option.key === value;
+        return (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => onChange(option.key)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+              active
+                ? "bg-slate-900 text-white"
+                : "bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50",
+            )}
+          >
+            {option.label}
+            {option.count != null ? (
+              <span className={active ? "text-white/70" : "text-slate-400"}>
+                {option.count}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SearchBar({ value, onChange, placeholder = "Search…", className, children }) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 focus-within:border-blue-500",
+        className,
+      )}
+    >
+      <Icon name="search" className="h-4 w-4 shrink-0 text-slate-400" />
+      <input
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+      />
+      {children}
+    </div>
+  );
+}
+
+export function SlideOver({
+  onClose,
+  title,
+  subtitle,
+  children,
+  footer,
+  width = "max-w-md",
+  kicker,
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-slate-900/40 backdrop-blur-sm"
+      />
+      <div className={cn("relative flex h-full w-full flex-col bg-white shadow-2xl", width)}>
+        <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            {kicker ? (
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">
+                {kicker}
+              </p>
+            ) : null}
+            <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+            {subtitle ? <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p> : null}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          >
+            <Icon name="x" className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        {footer ? (
+          <div className="border-t border-slate-100 bg-white px-5 py-4">{footer}</div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -221,6 +432,23 @@ const ICON_PATHS = {
     "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z",
   users:
     "M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z",
+  search:
+    "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z",
+  pencil:
+    "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125",
+  trash:
+    "m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
+  refresh:
+    "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99",
+  chevronDown: "m19.5 8.25-7.5 7.5-7.5-7.5",
+  arrowRight: "M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3",
+  flame:
+    "M15.362 5.214A8.252 8.252 0 0 1 12 21 8.25 8.25 0 0 1 6.038 7.047 8.287 8.287 0 0 0 9 9.601a8.983 8.983 0 0 1 3.361-6.867 8.21 8.21 0 0 0 3 2.48Z M12 18a3.75 3.75 0 0 0 .495-7.468 5.99 5.99 0 0 0-1.925 3.547 5.975 5.975 0 0 1-2.133-1.001A3.75 3.75 0 0 0 12 18Z",
+  waves:
+    "M3 12c1.5 0 1.5 1.5 3 1.5s1.5-1.5 3-1.5 1.5 1.5 3 1.5 1.5-1.5 3-1.5 1.5 1.5 3 1.5 1.5-1.5 3-1.5 M3 17c1.5 0 1.5 1.5 3 1.5s1.5-1.5 3-1.5 1.5 1.5 3 1.5 1.5-1.5 3-1.5 1.5 1.5 3 1.5 1.5-1.5 3-1.5",
+  mountain: "m3 18.75 6-7.5 4.5 5.25 3-3.75 4.5 6H3Z",
+  cyclone:
+    "M12 3.75a8.25 8.25 0 1 0 8.25 8.25 M12 8.25a3.75 3.75 0 1 1-3.75 3.75",
 };
 
 export function Icon({ name, className = "h-5 w-5" }) {

@@ -20,12 +20,19 @@ rescue team, DMO, admin (web portal).
 4. Forgot your login / locked out? Contact your LDRRMO — staff accounts are managed on the
    admin's **Staff** page, resident (mobile) accounts on the admin's **Users** page.
 
+### Mobile — rescue team (email + password)
+1. On the login screen tap **"Rescue Team? Sign in with email"**.
+2. Use the email + password issued by the admin. Your account must have role `rescueTeam` and be **added to a team** by dispatch (Teams tab → Add responder) — otherwise the app shows "No rescue team is linked to your account yet".
+
 ### Web — staff only (email + password)
 1. Open the portal (Firebase Hosting URL).
 2. Log in with the email + password issued by the **admin**.
 3. Only `dispatcher`, `rescueTeam`, `dmo`, `admin` accounts can use the web portal; residents
    use the mobile app. Disabled accounts (`active:false`) are blocked at login.
 4. Change of role? Log out and back in — roles are loaded at sign-in.
+5. The login page shows a short **project description** and links to the **Terms of Use &
+   Privacy** page (also reachable at `/terms`) — signing in means you accept it. Developer
+   credits appear at the bottom of the page.
 
 ---
 
@@ -90,26 +97,61 @@ You triage incoming reports and run assignments.
 5. **Contact details (PII)** — the victim/contact panel is visible to you here; rescue teams
    only gain access once their team is assigned to that report.
 
-## 4. Rescue team — web
+## 4. Rescue team
 
-1. Open your **queue** — assignments dispatched to your team appear as
-   `dispatched → accepted → in_progress → completed`.
-2. **Accept** or **decline** (declining notifies dispatch).
-3. On **Start**: status becomes `Rescue in Progress` — and the **contact/victim PII for that
-   report is unlocked** for your team (requires `teamId` set on your user account by the
-   admin).
-4. On **Complete**: enter **people rescued** and outcome notes. This creates a rescue record,
-   sets the report to `Resolved` and notifies the reporter.
+The rescue flow uses **two screens**: the responder on the **web** confirms the rescue, and the
+team in the field uses the **mobile app**.
+
+### 4.1 Responder — web
+1. Open **Responder**. Assignments dispatched to your team are listed on the left as cards.
+2. **Click a card** — the map shows the **pin** where the team will go, plus the description,
+   dispatcher notes and (once assigned) the victim/contact details.
+3. Press **Confirm rescue** (or **Decline**). Confirming marks the assignment `accepted` and sends a
+   **"Rescue assigned" notification to every member of the team's phones**. If the team has no
+   members you'll see a notice — add responders in Dispatch → Teams first.
+4. While waiting you can press **Notify team again**. **Start without app** exists only as a manual
+   fallback when the team can't use the mobile app.
+5. When the team starts tracking, the map shows their **live position** (blue dot) and the time of the
+   last GPS update.
+6. After the team finishes, the assignment turns **Resolved** and the report becomes `Resolved`.
+   ("Complete & record outcome" on the web is a fallback if the app can't be used.)
+
+### 4.2 Rescue team — mobile app
+1. Sign in with your email (see §1). The home screen lists your team's **Active** and **Completed** jobs.
+2. When the web responder confirms, a **popup "Rescue assigned"** appears (the app must be open).
+   Tap **Start Tracking** (or **Later** and open the job from the list).
+3. **Start Tracking** turns on your GPS, marks the rescue **in progress** (the reporter is notified)
+   and draws the **road route** to the incident with distance and travel time at the top. Allow
+   location permission when asked, and keep the app open on screen.
+4. When you arrive, the banner shows **"You've arrived"**. Do the rescue.
+5. **Press and hold "Hold to Confirm Rescue"** for about 1.5 seconds until the bar fills.
+6. Fill in the finish form: **people saved**, **description / notes**, and up to **5 photos**. Tap
+   **Save & Finish**. The rescue record is saved and the report is resolved once every team on that
+   incident is done.
+
+> If the route shows as a straight line, the road-route service (OpenRouteService) is unavailable or
+> its key isn't configured — tracking and finishing still work.
 
 ## 5. DMO — web (analytics)
 
-- KPIs: reports, reporters, resolve rate, **avg time-to-verify / time-to-resolve**, people
-  affected/rescued.
-- Charts: type bars, status donut, **open reports by waiting time**, reports over time,
-  **reports by area**
-  (barangay/city from reporter profiles), rescue outcomes.
-- Filters: date range + disaster type.
-- **Export**: CSV and PDF for any view.
+The **Operations Analytics** page is organised top-down, from the headline to the raw records.
+Filters (time range + disaster type) sit at the top; **Reset filters** appears once you change them.
+
+1. **At a glance** — three headline numbers: **Open now** (of total reports), **Resolve rate**,
+   and **Rescued of affected** (people rescued vs people affected).
+2. **What is behind the numbers** — three groups:
+   - **Incident load** — reports, reporters, people affected, plus a **priority split** bar
+     (high / medium / low).
+   - **Response speed** — avg time-to-verify, avg time-to-resolve, resolved count.
+   - **Rescue outcomes** — rescue operations, people rescued, avg rescued per operation.
+3. **Patterns** — reports over time, plus a **Break down by** toggle that switches the chart
+   between **Status / Priority / Type / Area** (area = barangay/city from reporter profiles).
+4. **Hotspots** — a map of past incidents with its **own** time range (Week / Month / Year /
+   All-time) and scope (Rescues only / All reports). Switch between **Heatmap** (hot zones) and
+   **Pins** (colored by disaster type); the **top-5 hotspot areas** list zooms the map when clicked.
+5. **Records** — tab between **Recent reports** (type, area, status, priority, people, submitted)
+   and **Rescue operations** (when, people rescued, notes). "Show most recent" expands to 10 rows.
+6. **Export** — **CSV** and **PDF** for the current filtered view (CSV includes `priority`).
 
 ## 6. Admin — web
 
@@ -129,14 +171,17 @@ You triage incoming reports and run assignments.
 - **Web:** bell icon with unread badge; click to mark read, "mark all" to clear.
 - **Web (dispatchers/admin):** when a new report arrives, a **pop-up toast + sound alert**
   appears in the corner; click it (or the bell) to jump to Dispatch.
-- **Mobile:** reports screen shows status updates; dispatchers receive "new report" pings.
-- Push (FCM) is planned future work — today notifications are in-app.
+- **Mobile:** reports screen shows status updates; dispatchers receive "new report" pings; rescue team members get the **"Rescue assigned" popup** with a **Start Tracking** button.
+- Push (FCM) is planned future work — today notifications are in-app, so the popup appears only while the app is open.
 
 ## 8. Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | Web login blocked | Account `active:false` or role is `resident` — contact admin |
+| Rescue team gets no popup on the phone | Team must have members (Dispatch → Teams → Add responder), the member's account must be role `rescueTeam`, and the app must be open when the web responder confirms |
+| Route is a straight line | OpenRouteService key missing/expired or service down — check `orsKey` in `mobile/lib/config/map_config.dart` |
+| Tracking stops when the phone locks | GPS is foreground-only — keep the app open on screen |
 | Rescue team can't see contact PII | Team must be **assigned** to the report **and** your user doc needs `teamId` set by the admin |
 | Photos fail to upload | Check connectivity; max 3 images; retry — the report text still submits |
 | Map tiles missing | Styles load from MapTiler/OpenFreeMap — check network; report pin still works offline |

@@ -418,3 +418,10 @@ test("simulation bulletin: the live storm wins unless overrideLive is requested"
   assert.equal(buildSimulationBulletin(now).overrideLive, undefined);
   assert.equal(buildSimulationBulletin(now, { overrideLive: true }).overrideLive, true);
 });
+
+test("simulation bulletin: valid times fall on the hour whatever the seed time", () => {
+  const b = buildSimulationBulletin(new Date("2026-10-23T05:41:27Z"));
+  assert.equal(b.analysisAt, "2026-10-23T05:00:00.000Z");
+  assert.equal(b.forecast[0].validAt, "2026-10-23T17:00:00.000Z"); // +12h
+  for (const f of b.forecast) assert.equal(new Date(f.validAt).getUTCMinutes(), 0);
+});

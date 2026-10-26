@@ -5,7 +5,10 @@ APK). Walk the steps in order — each has the expected result. Anything that fa
 **Results** table at the bottom (date, step, what happened) so regressions are visible.
 
 Prereqs: web build deployed, **latest rules deployed** (includes backup-team PII access), APK
-installed on an Android device or emulator, internet on.
+installed on an Android device or emulator, internet on. For the rescue flow (§3) you need a
+**second phone/emulator** (or the same device after logging out) for the rescue team, a build that
+includes the rescue files, and a free OpenRouteService token in `mobile/lib/config/map_config.dart`
+(`orsKey`) — without it the route is a straight line (still pass-able, note it in Results).
 
 ---
 
@@ -21,8 +24,12 @@ installed on an Android device or emulator, internet on.
    used for all submissions.
 4. **Dispatch page** → **Teams** → create teams "Rescue Alpha" and "Rescue Bravo" (any contact
    number). Then on the **Alpha** team card use **Add responder** to add `rescue1` — this writes
-   `users/rescue1.teamId` (no Firebase-console step needed). Steps 3.3–3.5 verify the PII gate
-   using this.
+   `users/rescue1.teamId` **and** `teams.memberUids` (needed for the mobile popup; no Firebase-console
+   step). Steps 3.5–3.7 verify the PII gate using this.
+5. **Login / terms / maps (visual):** the **web** login shows the project description, a **Terms of
+   Use & Privacy** link (opens `/terms`), and developer credits (**Group 5 · 3J-G1** · IT 305 ·
+   BulSU). The **mobile** login shows the description, a **Terms of Use & Privacy** link, and the
+   credits line. On any map the **ocean/water is tinted blue** (`#B9D4EA`), not grey.
 
 ## 1. Resident — submit (mobile)
 
@@ -54,19 +61,32 @@ Console spot-check (Firestore → reports/{newest}):
 | 2.7 | On the assigned report: **Add backup team** → "Rescue Bravo" | Second assignment created; both teams listed under **Assigned rescue teams** (Primary + Backup) |
 | 2.8 | Optional: select 2+ nearby reports → **suggested cluster** → cluster-assign | One assignment covers the cluster; live progress visible |
 
-## 3. Rescue team — respond (web)
+## 3. Rescue team — respond (web confirm + mobile field app)
 
-Log in as `rescue1@drrm.test`.
+Use **two sessions**: web as `rescue1@drrm.test` (responder), and the mobile app signed in with the
+same `rescue1@drrm.test` (login screen → **Rescue Team? Sign in with email**). Allow location
+permission on the phone.
 
 | # | Step | Expected |
 |---|---|---|
-| 3.1 | Open queue | Assignment listed as `dispatched` |
-| 3.2 | **Accept**, then **Start** | Status `in_progress`; report → `Rescue in Progress`; resident notified |
-| 3.3 | Open the report's **contact details** | **PII visible** — your team is assigned (`users.teamId` matches the report, incl. backup teams) |
-| 3.4 | Teams tab: **remove** yourself from the team, then reload the report | **PII hidden** (empty / permission denied) — the §8 gate working |
-| 3.5 | Teams tab: **re-add** yourself, reload | **PII visible** again |
-| 3.6 | **Complete** with people rescued = 2 + outcome notes | `rescueRecords` row created; report → `Resolved`; resident notified |
-| 3.7 | (Back as dispatcher) **Close** the report | Status `Closed`; audit `report_close` |
+| 3.1 | Web: open **Responder** | Assignment card listed `Dispatched` |
+| 3.2 | Web: **click the card** | Map shows the destination **pin** at the report's coordinates; description + dispatcher notes shown |
+| 3.3 | Web: **Confirm rescue** | Assignment → `Accepted`; notice "N of N team member(s) notified on mobile"; one `notifications` doc (`type:rescue_assigned`, `assignmentId`) per `memberUids` entry |
+| 3.4 | Mobile (app open): wait a second | **"Rescue assigned" popup** with **Later** / **Start Tracking** |
+| 3.5 | Mobile: **Start Tracking** | Job map opens; report → `Rescue in Progress`; resident notified; blue dot + red pin; **road route** with distance/ETA banner (straight line + snackbar if no ORS key) |
+| 3.6 | Move the phone / fake GPS ≥ 10 m | Blue dot moves; Firestore `assignments.responderLocation` updates (~10 s); **web map shows the live blue dot** and "Last GPS update" |
+| 3.7 | Open the report's **contact details** (web) | **PII visible** — your team is assigned (`users.teamId` matches the report, incl. backup teams) |
+| 3.8 | Teams tab: **remove** `rescue1` from the team, reload the report | **PII hidden** (empty / permission denied) — the §8 gate working |
+| 3.9 | Teams tab: **re-add** `rescue1`, reload | **PII visible** again |
+| 3.10 | Mobile: **tap** (don't hold) "Hold to Confirm Rescue" | Nothing happens (bar resets) |
+| 3.11 | Mobile: **press and hold ~1.5 s** | Bar fills, **finish form** opens |
+| 3.12 | Mobile: people saved = 2, description, **2 photos** → **Save & Finish** | `rescueRecords` row has `peopleRescued:2`, `notes`, `imageUrls` (2 Cloudinary URLs); assignment `completed`; report → `Resolved`; resident notified; screen closes |
+| 3.13 | Mobile: try a `.txt`-renamed photo / >10 MB image in the form | Rejected with a message naming the file |
+| 3.14 | Mobile: dismiss the popup with **Later**, then open the job from the list | Job screen opens; **Start Tracking** button available (status `accepted`) |
+| 3.15 | (Back as dispatcher) **Close** the report | Status `Closed`; audit `report_close` |
+
+Optional: with **two teams** on one report (primary + backup), finish only one → report stays
+`Rescue in Progress`; finish the second → report `Resolved`.
 
 ## 4. DMO — analytics (web)
 
@@ -74,10 +94,13 @@ Log in as `dmo1@drrm.test`.
 
 | # | Step | Expected |
 |---|---|---|
-| 4.1 | Open analytics | KPIs count today's reports; avg time-to-verify/resolve present |
-| 4.2 | Charts | Type bars include Flood; **open reports by waiting time** donut; status donut includes Resolved/Closed; **reports by area** shows the resident's barangay/city |
-| 4.3 | Apply a date-range filter | Numbers update consistently |
-| 4.4 | **Export CSV** and **PDF** | Both download with the current view's data |
+| 4.1 | Open analytics | **At a glance** hero stats: Open now / Resolve rate / Rescued of affected; range + disaster-type filters at the top (Reset appears once changed) |
+| 4.2 | Metric groups | **Incident load** (reports, reporters, people affected + **priority split**), **Response speed** (avg verify/resolve, resolved), **Rescue outcomes** (ops, people rescued, avg per op) |
+| 4.3 | **Patterns → Break down by** | Toggle **Status / Priority / Type / Area** — the donut/bar swaps; no more "waiting time" donut |
+| 4.4 | **Hotspots** map | Heatmap ↔ Pins toggle; Week/Month/Year/All-time + Rescues-only/All-reports; legend swaps; **top-5 hotspot areas** list zooms the map on click; blue ocean |
+| 4.5 | **Records** | Tabs **Recent reports** (Type/Area/Status/**Priority**/People/Submitted) and **Rescue operations** (When/People rescued/Notes); "Show most recent" expands to 10 |
+| 4.6 | Apply a date-range filter | Numbers update consistently across stats, charts and the hotspot map |
+| 4.7 | **Export CSV** and **PDF** | Both download with the current view; CSV columns are `…status, priority, peopleAffected, peopleRescued, area…` (no `waitingMinutes`) |
 
 ## 5. Admin — governance (web)
 

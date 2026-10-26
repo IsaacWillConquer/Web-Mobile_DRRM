@@ -21,7 +21,8 @@ React web (admin/responder/DMO) ─┴─→ Firebase: Auth · Firestore · FCM
                                       (Firestore security rules = the "backend")
 ```
 
-No server. No Postgres. Images via Cloudinary (free). Maps via OpenStreetMap.
+No server. No Postgres. Images via Cloudinary (free). Maps via **MapLibre GL** on
+OpenStreetMap data (keyless OpenFreeMap Positron, water tinted blue).
 
 ## Layout
 
@@ -49,7 +50,7 @@ No server. No Postgres. Images via Cloudinary (free). Maps via OpenStreetMap.
 6. Dispatcher creates **rescue teams** and **assigns** one to a cluster.
 7. Rescue team accepts, updates status, records people rescued + outcome.
 8. Status changes flow back; the reporter gets **notifications**.
-9. DMO views incident **stats/reports**.
+9. DMO views incident **stats/reports** — headline metrics, trends, and an incident **hotspot map**.
 
 ## Resilience (offline + SMS) — optional / roadmap
 

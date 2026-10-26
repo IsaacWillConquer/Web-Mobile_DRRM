@@ -30,18 +30,44 @@ Map<String, dynamic> buildStormSignals(
 }
 
 /// Region choropleth of weekly rainfall (Open-Meteo).
+/// Rain choropleth. [areas] is the provinces or regions GeoJSON the forecast
+/// was made for; each area is labelled with its 7-day total in mm.
 Map<String, dynamic> buildRainForecast(
-  Map<String, dynamic> regions,
+  Map<String, dynamic> areas,
   List<RegionRain> rain,
 ) {
-  final levelByArea = {for (final r in rain) canonicalArea(r.name): r.level};
-  return _choropleth(regions, (name) => levelByArea[canonicalArea(name)]);
+  final byArea = {for (final r in rain) canonicalArea(r.name): r};
+  return _choropleth(
+    areas,
+    (name) => byArea[canonicalArea(name)]?.level,
+    labelOf: (name) {
+      final entry = byArea[canonicalArea(name)];
+      return entry == null ? '' : entry.mm.round().toString();
+    },
+  );
 }
+
+/// Colour and caption of each rain level. Same thresholds as `levelForMm` in
+/// scripts/lib/rain_geo.js; shared by the map fill and the legend.
+class RainLevelStyle {
+  const RainLevelStyle(this.level, this.colorHex, this.label);
+
+  final int level;
+  final String colorHex;
+  final String label;
+}
+
+const List<RainLevelStyle> kRainLevels = [
+  RainLevelStyle(1, '#93C5FD', 'Light · under 50 mm'),
+  RainLevelStyle(2, '#FCD34D', 'Moderate · 50–149 mm'),
+  RainLevelStyle(3, '#F87171', 'Heavy · 150 mm or more'),
+];
 
 Map<String, dynamic> _choropleth(
   Map<String, dynamic> base,
-  int? Function(String name) levelOf,
-) {
+  int? Function(String name) levelOf, {
+  String Function(String name)? labelOf,
+}) {
   final features = <Map<String, dynamic>>[];
   for (final raw in (base['features'] as List)) {
     final feature = (raw as Map).cast<String, dynamic>();
@@ -51,7 +77,11 @@ Map<String, dynamic> _choropleth(
     if (level == null) continue;
     features.add({
       'type': 'Feature',
-      'properties': {'name': name, 'level': level, 'label': '$level'},
+      'properties': {
+        'name': name,
+        'level': level,
+        'label': labelOf?.call(name) ?? '$level',
+      },
       'geometry': feature['geometry'],
     });
   }
@@ -89,6 +119,185 @@ Map<String, dynamic> buildTyphoonForecast(Typhoon typhoon) {
         },
     ],
   };
+}
+
+/// Colour and wind range of each PAGASA tropical cyclone wind signal (TCWS).
+/// Shared by the map fill and the legend so they cannot drift apart.
+class SignalLevelStyle {
+  const SignalLevelStyle(this.level, this.colorHex, this.winds);
+
+  final int level;
+  final String colorHex;
+  final String winds;
+}
+
+const List<SignalLevelStyle> kSignalLevels = [
+  SignalLevelStyle(1, '#1E88E5', '39–61 km/h'),
+  SignalLevelStyle(2, '#F9A825', '62–88 km/h'),
+  SignalLevelStyle(3, '#EF6C00', '89–117 km/h'),
+  SignalLevelStyle(4, '#D32F2F', '118–184 km/h'),
+  SignalLevelStyle(5, '#C2185B', '185 km/h or more'),
+];
+
+// ---------------------------------------------------------------------------
+// One label per feature. A symbol layer on the polygons would label EVERY part
+// of a multi-part province (each island), so labels get their own point source.
+// ---------------------------------------------------------------------------
+
+/// A point inside the largest part of a Polygon/MultiPolygon, kept away from
+/// its edges (a cheap "pole of inaccessibility"), as GeoJSON [lng, lat].
+/// Null when the geometry has no usable ring.
+List<double>? labelPoint(Object? geometry) {
+  if (geometry is! Map) return null;
+  final type = geometry['type'];
+  final coords = geometry['coordinates'];
+  if (coords is! List) return null;
+
+  final rings = <List<List<double>>>[]; // outer ring of each part
+  if (type == 'Polygon') {
+    final ring = _readRing(coords.isEmpty ? null : coords.first);
+    if (ring.isNotEmpty) rings.add(ring);
+  } else if (type == 'MultiPolygon') {
+    for (final polygon in coords) {
+      if (polygon is List && polygon.isNotEmpty) {
+        final ring = _readRing(polygon.first);
+        if (ring.isNotEmpty) rings.add(ring);
+      }
+    }
+  }
+  if (rings.isEmpty) return null;
+
+  var largest = rings.first;
+  var largestArea = _ringArea(largest);
+  for (final ring in rings.skip(1)) {
+    final area = _ringArea(ring);
+    if (area > largestArea) {
+      largest = ring;
+      largestArea = area;
+    }
+  }
+  return _interiorPoint(largest);
+}
+
+/// Turns a polygon FeatureCollection into one Point per feature (properties
+/// are kept, so `label`/`level` still work). Features without geometry drop out.
+Map<String, dynamic> buildLabelPoints(Map<String, dynamic> polygons) {
+  final features = <Map<String, dynamic>>[];
+  for (final raw in (polygons['features'] as List)) {
+    final feature = (raw as Map).cast<String, dynamic>();
+    final point = labelPoint(feature['geometry']);
+    if (point == null) continue;
+    features.add({
+      'type': 'Feature',
+      'properties': feature['properties'] ?? const <String, dynamic>{},
+      'geometry': {'type': 'Point', 'coordinates': point},
+    });
+  }
+  return {'type': 'FeatureCollection', 'features': features};
+}
+
+List<List<double>> _readRing(Object? raw) {
+  if (raw is! List) return const [];
+  return [
+    for (final p in raw)
+      if (p is List && p.length >= 2 && p[0] is num && p[1] is num)
+        [(p[0] as num).toDouble(), (p[1] as num).toDouble()],
+  ];
+}
+
+double _ringArea(List<List<double>> ring) {
+  var sum = 0.0;
+  for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    sum += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  }
+  return sum.abs() / 2;
+}
+
+bool _inRing(List<List<double>> ring, double x, double y) {
+  var inside = false;
+  for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    final xi = ring[i][0];
+    final yi = ring[i][1];
+    final xj = ring[j][0];
+    final yj = ring[j][1];
+    if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+double _distToSegment(
+  double px,
+  double py,
+  double ax,
+  double ay,
+  double bx,
+  double by,
+) {
+  final dx = bx - ax;
+  final dy = by - ay;
+  final len2 = dx * dx + dy * dy;
+  final t = len2 == 0
+      ? 0.0
+      : math.max(0.0, math.min(1.0, ((px - ax) * dx + (py - ay) * dy) / len2));
+  final cx = ax + t * dx;
+  final cy = ay + t * dy;
+  return math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+}
+
+double _distToRing(List<List<double>> ring, double x, double y) {
+  var best = double.infinity;
+  for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    best = math.min(
+      best,
+      _distToSegment(x, y, ring[j][0], ring[j][1], ring[i][0], ring[i][1]),
+    );
+  }
+  return best;
+}
+
+/// Grid search for the inside point farthest from the ring's edges, narrowing
+/// the search window around the best point a few times.
+List<double> _interiorPoint(List<List<double>> ring) {
+  var x0 = ring.first[0];
+  var x1 = x0;
+  var y0 = ring.first[1];
+  var y1 = y0;
+  for (final p in ring) {
+    x0 = math.min(x0, p[0]);
+    x1 = math.max(x1, p[0]);
+    y0 = math.min(y0, p[1]);
+    y1 = math.max(y1, p[1]);
+  }
+
+  var bestX = (x0 + x1) / 2;
+  var bestY = (y0 + y1) / 2;
+  var bestDist = _inRing(ring, bestX, bestY) ? _distToRing(ring, bestX, bestY) : -1.0;
+
+  const steps = 12;
+  for (var round = 0; round < 4; round++) {
+    for (var i = 0; i <= steps; i++) {
+      for (var j = 0; j <= steps; j++) {
+        final x = x0 + (x1 - x0) * i / steps;
+        final y = y0 + (y1 - y0) * j / steps;
+        if (!_inRing(ring, x, y)) continue;
+        final d = _distToRing(ring, x, y);
+        if (d > bestDist) {
+          bestDist = d;
+          bestX = x;
+          bestY = y;
+        }
+      }
+    }
+    final halfW = (x1 - x0) / 6;
+    final halfH = (y1 - y0) / 6;
+    x0 = bestX - halfW;
+    x1 = bestX + halfW;
+    y0 = bestY - halfH;
+    y1 = bestY + halfH;
+  }
+  return [bestX, bestY];
 }
 
 // ---------------------------------------------------------------------------

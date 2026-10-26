@@ -1,0 +1,85 @@
+# FinalProject_DRRM
+
+  Web + Mobile **Disaster Rescue Reporting & Monitoring System**
+IT 305 – Advance Web Development · Bulacan State University · Submit **Nov 2, 2026**
+
+## What it is
+
+Residents report emergencies/disasters (flood, fire, earthquake, landslide, etc.) from a
+**Flutter mobile app**. Dispatchers verify, prioritize, and assign rescue teams from a **React
+web dashboard**; the responder confirms the rescue on the web map, and the rescue team's phone
+gets a popup, tracks a live GPS route to the incident and records the outcome; DMOs monitor
+incidents and generate reports.
+
+The goal is to recreate the **flow** of the open-source `agap.ai` project, but built entirely
+**our own way**. We do not use their backend or code.
+
+## Architecture
+
+```
+Flutter mobile (resident + rescue team) ─┐
+React web (admin/responder/DMO) ─┴─→ Firebase: Auth · Firestore · FCM
+                                      (Firestore security rules = the "backend")
+```
+
+No server. No Postgres. Images via Cloudinary (free). Maps via OpenStreetMap.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `web/` | React + Vite + Tailwind dashboard (admin/dispatch + responder + DMO) |
+| `mobile/` | Flutter app (resident/reporter + rescue-team field app) |
+| `firestore/` | Security rules + indexes |
+| `docs/` | `TRACKER.md` (single source of truth), ERD, manual, defense notes |
+
+## Documentation
+
+- **Start here:** [`docs/TRACKER.md`](docs/TRACKER.md) — decisions, team split, phases, progress.
+- **Contributing:** [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — branching, PRs, ownership, shared files.
+- **Setup:** [`docs/SETUP.md`](docs/SETUP.md) — Firebase + Cloudinary one-time config.
+
+## Core flow (copied from agap.ai)
+
+1. Resident registers / logs in.
+2. Resident submits a report — disaster type, GPS location (+ manual pin), **up to 3 photos**, description.
+3. Resident marks the report **for myself** or **for someone else** (captures victim details).
+4. Nearby reports group into a **cluster** (duplicate/nearby detection).
+5. Dispatcher sees reports/clusters on a **live map**, verifies + triages. **Rescue priority
+   follows submission time — the oldest active report is rescued first** (no severity input).
+6. Dispatcher creates **rescue teams** and **assigns** one to a cluster.
+7. Web responder clicks the assignment → map pin → **Confirm rescue** → the team's phone shows a popup → **Start Tracking** (live GPS + road route) → **hold to confirm** and record people saved, description and photos.
+8. Status changes flow back; the reporter gets **notifications**.
+9. DMO views incident **stats/reports**.
+
+## Resilience (offline + SMS) — optional / roadmap
+
+> **Status: not implemented yet.** These are optional stretch goals; the shipped app needs
+> connectivity. With no data, residents should call the LDRRMO hotline. See
+> [`docs/DEFENSE_NOTES.md`](docs/DEFENSE_NOTES.md) §4 for the honest gap list.
+
+- **Offline-first (mobile) — planned:** queue reports and photos locally and sync on reconnect;
+  cached map tiles keep the map usable; an offline banner + "pending sync" badge.
+- **SMS fallback — planned:** a **Send via SMS** button opens the native composer pre-filled to the
+  LDRRMO hotline with coordinates + a short description (free, serverless, works over cellular).
+
+## Reference (read-only)
+
+`FinalProject_AWA/` (our earlier Firebase scaffold) and `agap.ai/` (the open-source app whose
+flow we copy) are kept as reference only — not modified, not imported.
+
+## Attribution
+
+- **Province / region boundaries:** [geoBoundaries](https://www.geoboundaries.org/) Philippines
+  ADM1 (regions) + ADM2 (provinces), licensed **CC BY 3.0 IGO**, sourced from NAMRIA / PSA /
+  OCHA Philippines via HDX. Bundled under `mobile/assets/geo/` and simplified for size.
+- **Basemap:** © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors. Default
+  style served by [MapTiler](https://www.maptiler.com/) (key required); OpenFreeMap
+  ([Positron/Bright](https://openfreemap.org/)) is available as a keyless fallback.
+- **Typhoon track / forecast:** [JMA](https://www.jma.go.jp/bosai/typhoon/) (RSMC Tokyo).
+- **Disaster alerts (reference):** [GDACS](https://www.gdacs.org/) (UN/EC).
+- **Road routing (rescue team):** [OpenRouteService](https://openrouteservice.org/) by HeiGIT, map data © OpenStreetMap contributors (free API token in the gitignored `map_config.dart`).
+- **Rainfall forecast:** Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0,
+  non-commercial). **Not** PAGASA data.
+- **PH wind signals (TCWS):** entered from [PAGASA](https://www.pagasa.dost.gov.ph/) bulletins by
+  an admin; no public API.

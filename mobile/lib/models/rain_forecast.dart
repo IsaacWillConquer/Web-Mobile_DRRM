@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Weekly rainfall forecast, one entry per region.
+/// Weekly rainfall forecast, one entry per province (or per region in old
+/// documents).
 ///
 /// Source: Open-Meteo (https://open-meteo.com/). Not PAGASA data.
 class RegionRain {
@@ -30,17 +31,26 @@ class RainForecast {
     required this.source,
     required this.postedAt,
     required this.regions,
+    this.byProvince = false,
   });
 
   final String source;
   final DateTime postedAt;
+  /// The entries (named `regions` for history); provinces when [byProvince].
   final List<RegionRain> regions;
 
+  /// True when the document holds per-province entries (`provinces`), false for
+  /// the old per-region documents (`regions`).
+  final bool byProvince;
+
   factory RainForecast.fromMap(Map<String, dynamic> data) {
-    final raw = (data['regions'] ?? const []) as List;
+    final provinces = data['provinces'];
+    final hasProvinces = provinces is List && provinces.isNotEmpty;
+    final raw = (hasProvinces ? provinces : (data['regions'] ?? const [])) as List;
     return RainForecast(
       source: (data['source'] ?? 'Open-Meteo') as String,
       postedAt: _parseDate(data['postedAt']),
+      byProvince: hasProvinces,
       regions: raw
           .map((e) => RegionRain.fromMap(Map<String, dynamic>.from(e as Map)))
           .toList(growable: false),

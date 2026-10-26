@@ -9,16 +9,23 @@ IT 305 · Bulacan State University · **Submit: Nov 2, 2026**
 
 ## 1. Decisions (locked)
 
-- **Approach:** recreate the **flow** of `agap.ai` ourselves — our own code, no reuse of their backend.
-- **Stack:** Firebase (Auth + Firestore + FCM). **No server. No Postgres.**
+- **Stack:** Firebase (Auth + Firestore + FCM).
 - **Web:** React + Vite + Tailwind → admin/dispatch + responder + DMO
-- **Mobile:** Flutter → resident/reporter
+- **Mobile:** Flutter → resident/reporter **+ rescue-team field app** (`rescueTeam` users are routed to the responder screens)
 - **Images:** Cloudinary (free, unsigned upload) — **up to 3 photos** per report
-- **Maps:** **MapTiler** vector styles (default `streets-v4`) on **MapLibre** (mobile), with
-  OpenFreeMap (Positron/Bright) as keyless fallbacks. Web: Leaflet. Key kept in gitignored `map_config.dart`.
+- **Maps:** **MapLibre GL** everywhere (mobile **and** web). Default basemap is keyless
+  **OpenFreeMap Positron** — calm grey, place/boundary labels only, **water tinted blue**
+  (`#B9D4EA`, set in `mobile/lib/config/map_styles.dart` and `web/src/pages/dispatch/mapStyle.js`).
+  The same style is used on the resident map, report screen, rescue job map, and the web
+  dispatch / responder / DMO maps. **MapTiler** vector styles (key in gitignored `map_config.dart`)
+  and OpenFreeMap **Bright** remain selectable fallbacks.
 - **Hazard overlays:** Typhoons (JMA, Firestore), Storm Signals (PAGASA TCWS, admin-entered),
   Rain Forecast (Open-Meteo). Hazards (flood/landslide) = UI-only stub (real data 486 MB–2.7 GB).
-- **Notifications:** in-app Firestore fan-out (web bell + toast/sound, mobile bell); **FCM push = future work**
+- **Notifications:** in-app Firestore fan-out (web bell + toast/sound, mobile bell); **FCM push = future work**.
+  Rescue assignment popup on mobile is also in-app (Firestore listener, works while the app is open).
+- **Rescue flow (Oct 26):** web responder **clicks a card → map pin → Confirm rescue** → every `teams.memberUids` phone gets a
+  `rescue_assigned` notification → mobile popup **Start Tracking** → live GPS + **OpenRouteService** road route (key in gitignored
+  `map_config.dart`; straight-line fallback without it) → **hold-to-confirm** finish form (people saved, description, up to 5 Cloudinary photos).
 - **Contact/victim details:** user **profile** (`users`) **+** per-report staff-only `reportContacts/{reportId}`
   (resident can report for self or someone else)
 - **Mobile auth:** **phone + password** (`+63`), synthetic `63…@drrm.local` Auth identifier; full profile
@@ -39,7 +46,7 @@ IT 305 · Bulacan State University · **Submit: Nov 2, 2026**
 |---|---|
 | `resident` | submits reports, tracks status |
 | `dispatcher` | verifies, prioritizes, assigns teams |
-| `rescueTeam` | receives/accepts assignments, updates status, records outcome |
+| `rescueTeam` | web: confirms rescue + follows team live · mobile: gets popup, tracks route, records outcome |
 | `dmo` | monitors trends, generates reports/stats |
 | `admin` | superuser on the same database — full staff access + staff CRUD (only role that manages accounts) |
 
@@ -58,7 +65,7 @@ create/update/delete staff accounts.
 ```
 FinalProject_DRRM/
 ├── web/        React dashboard (admin/dispatch + responder + DMO)
-├── mobile/     Flutter app (resident)
+├── mobile/     Flutter app (resident + rescue team)
 ├── firestore/  security rules + indexes
 └── docs/       TRACKER, ERD, manual, defense notes
 ```
@@ -72,9 +79,9 @@ FinalProject_DRRM/
 | `reportContacts/{reportId}` | subject('self'\|'other'), victimName, victimContact, relationship, peopleCount, specialNeeds[], notes — **staff-only PII** |
 | `clusters/{id}` | center, cell/geohash, reportIds[], priority, status, reportCount, peopleAffected |
 | `teams/{id}` | name, contact, status, memberUids[] |
-| `assignments/{id}` | reportId/clusterId, teamId, status(dispatched→accepted→in_progress→completed \| declined \| cancelled), backup, dispatchedBy, notes, timestamps |
-| `rescueRecords/{id}` | assignmentId, peopleRescued, outcome, notes |
-| `notifications/{id}` | userId, title, body, read, createdAt |
+| `assignments/{id}` | reportId/clusterId, teamId, status(dispatched→accepted→in_progress→completed \| declined \| cancelled), backup, dispatchedBy, notes, **responderLocation{lat,lng,updatedAt}**, **startedAt/completedAt**, timestamps |
+| `rescueRecords/{id}` | assignmentId, reportId, teamId, peopleRescued, notes (description), **imageUrls[]**, recordedBy |
+| `notifications/{id}` | userId, title, body, read, **type?** (`new_report` \| `rescue_assigned`), **assignmentId?**, reportId?, createdAt |
 | `logs/{id}` | uid, action, details, createdAt |
 
 Geo/nearby + duplicate detection via a **custom geohash encoder + client-side grid** (no PostGIS, no external geo library). Rescue priority is **time-based** (oldest active report first); the stored `priority` field is legacy.
@@ -124,7 +131,20 @@ Geo/nearby + duplicate detection via a **custom geohash encoder + client-side gr
 
 ### P3 — Web responder + DMO (Oct 18–23) — C
 - [x] Responder: assigned incidents, accept/decline, update status, record outcome (`rescueRecords`)
-- [x] DMO: incident charts + CSV export (PDF export done)
+- [x] DMO: incident charts + CSV/PDF export (later restructured — see **P7**)
+
+### P3b — Rescue flow v2: web confirm + mobile field app (Oct 26) — B/C/D
+- [x] Web responder page: assignment cards + **MapLibre map with destination pin** (`ResponderMap.jsx`), click card → map before confirming
+- [x] **Confirm rescue** (replaces Accept) → assignment `accepted` + `rescue_assigned` notification to every `teams.memberUids`; "Notify team again"
+- [x] Web shows the team's **live position** (blue dot + dashed link) from `assignments.responderLocation` while `in_progress`
+- [x] Mobile: `rescueTeam` role routing (`main.dart`), `teamId` + live profile stream + email sign-in (`auth_service.dart`, `login_screen.dart`)
+- [x] Mobile: rescue home (Active/Completed job list per `teamId`) + **"Rescue assigned" popup with Start Tracking** (`rescue_team_shell.dart`)
+- [x] Mobile: **Start Tracking** → `in_progress`, report → `Rescue in Progress`, reporter notified, live GPS written every ~10 s
+- [x] Mobile: **road route + distance/ETA** via OpenRouteService (`routing_service.dart`), refreshed ~every 45 s; straight-line fallback
+- [x] Mobile: **hold-to-confirm** (1.5 s) → finish form: people saved, description, up to 5 photos (Cloudinary) → `rescueRecords` + `completed` + report `Resolved` (when no other team still active)
+- [x] `flutter analyze` on the new mobile files — clean (added the missing `RescueRecord` model + `RescueService.watchRescueRecord`, `models/rescue_record.dart`)
+- [ ] Live E2E pass of the new flow (`docs/E2E_TEST_PLAN.md` §3)
+- [ ] Add `orsKey` to local `mobile/lib/config/map_config.dart` (free HeiGIT token)
 
 ### P4 — Flutter mobile: core (Oct 18–24) — D
 - [x] Auth (phone + password, signup wizard)
@@ -157,6 +177,19 @@ Geo/nearby + duplicate detection via a **custom geohash encoder + client-side gr
 - [x] ERD, user manual, defense notes
 - [x] Build Flutter APK *(release, debug-signed — `mobile/build/app/outputs/flutter-apk/app-release.apk`, 82.1 MB; web: live on Firebase Hosting)*
 - [x] Video prep (`docs/DEMO_SCRIPT.md`) + E2E runbook (`docs/E2E_TEST_PLAN.md`) — **live test pass still to run**
+
+### P7 — Analytics v2 + final polish (Oct 26) — B/C
+- [x] DMO Analytics restructured into a hierarchy: **At a glance** hero stats → metric groups
+  (load / speed / outcomes) with a **priority split** → **Patterns** (trend + one breakdown at a
+  time: Status / Priority / Type / Area) → **Hotspots** → **Records** (Recent reports / Rescue
+  operations tabs, expand-to-10)
+- [x] **Hotspot map** (`web/src/pages/dmo/IncidentMap.jsx`): heatmap / pins, its own Week / Month /
+  Year / All-time range + Rescues-only / All-reports scope, top-5 hotspot ranking with click-to-zoom
+- [x] **Positron water tint** (blue ocean) across web + mobile maps (`recolorWater` /
+  `MapStyles.resolveDefaultStyle`)
+- [x] Login polish: project description, a **Terms of Use & Privacy** page (`/terms`,
+  `pages/Terms.jsx`; mobile `terms_screen.dart`) linked from both logins, and developer credits
+- [x] Fix `IncidentMap.jsx` render-purity lint warning (range threshold derived outside render)
 
 ### Nov 2 — SUBMIT
 
@@ -217,6 +250,11 @@ Geo/nearby + duplicate detection via a **custom geohash encoder + client-side gr
 | 2026-10-22 | web-ui | **Web dashboard polish**: left **sidebar nav** + hamburger drawer (replaces top tabs); **web map migrated Leaflet → MapLibre GL v5 + OpenFreeMap Positron** (place-only labels, pins + density, click-select, flyTo) — pinned `maplibre-gl@^5` after a v6 load-event issue; **pagination** on Activity (15/page) and Staff (10/page); **cluster dropdown color fix** (`index.css` `color-scheme: light` + explicit select colors); **Teams search** + **nearest-team suggestion** in report & cluster assign (`geo.js` haversine — shows "Suggested: <team> · X km" and autoselects). Lint clean, build green. |
 | 2026-10-25 | web | **Time-based rescue queue** (oldest active report = #1; age-colored map/list, `Next rescue` badge, no manual priority) + **backup teams** (`reports.backupTeamIds` + backup assignments + rules PII gate) + **terminal handling** (reject/duplicate release teams, cancel open assignments, clear `teamId`/`backupTeamIds`, detail panel closes; `Active` list + map exclude terminal); DMO "open reports by waiting time" donut + `waitingMinutes` CSV; docs realigned, `docs/SYSTEM_FLOW.md` added. Lint + build green. |
 | 2026-10-23 | web-ui | **Notifications + admin users**: notification dropdown now **viewport-clamped** (`position: fixed`, clamped left, flips above when short on space — no more off-screen overflow from the sidebar/narrow drawer); **admin Users page** (admin-only `/admin/users`) with full CRUD for **mobile-only resident accounts** (create login via Identity Toolkit using the phone→`<digits>@drrm.local` identifier, edit name/email/address, enable/disable, delete; phone is the login identity and read-only after creation) + resident audit log actions; **new-report pop-up + sound** for dispatchers/admin (`ReportAlerts`: toast + Web Audio beep on a fresh `new_report` ping, click → Dispatch). Web lint/build green. |
+| 2026-10-26 | rescue-flow | **Rescue flow v2**: web responder = click card → map pin → **Confirm rescue** → `rescue_assigned` notification to all team members; mobile `rescueTeam` app (job list, in-app **Start Tracking** popup, live GPS, **OpenRouteService** road route + ETA, **hold-to-confirm** finish form with people saved / description / up to 5 photos). New: `ResponderMap.jsx`, `rescue_team_shell.dart`, `rescue_service.dart`, `routing_service.dart`, `assignment.dart`; updated `ResponderPage.jsx`, `auth_service.dart`, `main.dart`, `login_screen.dart`. Web build green; **Flutter files not yet analyzed/run** — next: `flutter analyze` + E2E §3. |
+| 2026-10-26 | fix | Mobile rescue files now `flutter analyze`-clean — added the missing `RescueRecord` model (`models/rescue_record.dart`) + `RescueService.watchRescueRecord`, imported into `rescue_team_shell.dart`. |
+| 2026-10-26 | maps | **Blue water on every map**: Positron `water`/`waterway` layers tinted `#B9D4EA` / `#9CC0DC` — web (`recolorWater` in `dispatch/mapStyle.js`; called by `ReportMap`, `ResponderMap`, `IncidentMap`) and mobile (`MapStyles.resolveDefaultStyle`, now also used by the report screen). Verified: `flutter analyze`/`oxlint` clean. |
+| 2026-10-26 | analytics | **DMO Analytics v2** (`DmoPage.jsx`): "At a glance" hero stats (Open now / Resolve rate / Rescued of affected), metric groups (Incident load + **priority split** · Response speed · Rescue outcomes), one-breakdown-at-a-time donut/bar (Status / Priority / Type / Area), Records tabs (Recent reports / Rescue operations, expand-to-10). New **hotspot map** `IncidentMap.jsx` — heatmap/pins, own Week/Month/Year/All range + Rescues-only/All-reports scope, top-5 hotspot areas with click-to-zoom. CSV now exports `priority` (was `waitingMinutes`). Lint/build green. |
+| 2026-10-26 | about | **Login + terms**: project description, developer credits (**Group 5 · 3J-G1** · IT 305 · Bulacan State University) and a **Terms of Use & Privacy** page linked from both logins — web `pages/Terms.jsx` (`/terms`) + constants in `web/src/config/appConfig.js`; mobile `terms_screen.dart` + `AppConfig.termsOfUse`. |
 
 ---
 
@@ -231,4 +269,14 @@ Geo/nearby + duplicate detection via a **custom geohash encoder + client-side gr
   (phone, full name, gender | age, disabilities pill), **HOME ADDRESS** (city, barangay, street,
   address), **HOUSEHOLD** (house floors, pets pill); keep My Reports + sign-out. Show **N/A** for
   gender when absent (the register doesn't capture it yet).
-  
+
+### Rescue flow follow-ups
+- **Show rescue photos on the web** — `rescueRecords.imageUrls` is saved by mobile and the DMO
+  **Records → Rescue operations** tab now lists `peopleRescued` + `notes`, but the **photos** still
+  aren't displayed on any web screen (completed assignment card / DMO outcome view).
+- **Background GPS** — tracking is foreground-only; add Android `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_LOCATION`
+  and a foreground notification so tracking survives a locked screen.
+- **FCM push for `rescue_assigned`** — popup only appears while the app is open; real push needs an FCM token collection +
+  Cloud Function (same future work as DEFENSE_NOTES §8).
+- **Decline reason on web** — web decline still writes no reason (mobile no longer declines; confirm happens on web).
+- **ORS dependency** — free-tier key + third-party service; OSRM is a keyless drop-in if OpenRouteService is down.

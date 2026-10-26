@@ -10,8 +10,10 @@ class OverlayRenderer {
   final MapLibreMapController controller;
 
   static const _layerIds = <String>[
-    'drrm-signals-src', 'drrm-signals-fill', 'drrm-signals-label',
-    'drrm-rain-src', 'drrm-rain-fill', 'drrm-rain-label',
+    'drrm-signals-src', 'drrm-signals-fill',
+    'drrm-signals-lbl-src', 'drrm-signals-label',
+    'drrm-rain-src', 'drrm-rain-fill',
+    'drrm-rain-lbl-src', 'drrm-rain-label',
     'drrm-tc-gale-src', 'drrm-tc-gale-fill', 'drrm-tc-gale-line',
     'drrm-tc-storm-src', 'drrm-tc-storm-fill', 'drrm-tc-storm-line',
     'drrm-tc-cone-src', 'drrm-tc-cone-fill', 'drrm-tc-cone-line',
@@ -27,21 +29,18 @@ class OverlayRenderer {
   static const _font = ['Noto Sans Bold'];
   static const _dash = <double>[3, 2];
 
-  static const _signalFill = [
-    'match', ['get', 'level'],
-    1, '#1E88E5',
-    2, '#F9A825',
-    3, '#EF6C00',
-    4, '#D32F2F',
-    5, '#C2185B',
+  // Built from kSignalLevels so the map and the legend share one set of colours.
+  static final List<Object> _signalFill = [
+    'match',
+    ['get', 'level'],
+    for (final style in kSignalLevels) ...[style.level, style.colorHex],
     '#9E9E9E',
   ];
 
-  static const _rainFill = [
-    'match', ['get', 'level'],
-    1, '#93C5FD',
-    2, '#FCD34D',
-    3, '#F87171',
+  static final List<Object> _rainFill = [
+    'match',
+    ['get', 'level'],
+    for (final style in kRainLevels) ...[style.level, style.colorHex],
     '#9E9E9E',
   ];
 
@@ -70,7 +69,11 @@ class OverlayRenderer {
         fillOutlineColor: '#FFFFFF',
       ),
     );
-    await _labels('drrm-signals-src', 'drrm-signals-label');
+    await controller.addGeoJsonSource(
+      'drrm-signals-lbl-src',
+      buildLabelPoints(features),
+    );
+    await _labels('drrm-signals-lbl-src', 'drrm-signals-label', size: 13);
   }
 
   Future<void> showRainForecast(Map<String, dynamic> features) async {
@@ -84,7 +87,17 @@ class OverlayRenderer {
         fillOutlineColor: '#FFFFFF',
       ),
     );
-    await _labels('drrm-rain-src', 'drrm-rain-label');
+    await controller.addGeoJsonSource(
+      'drrm-rain-lbl-src',
+      buildLabelPoints(features),
+    );
+    // 80+ provinces: let MapLibre hide colliding numbers; zooming in reveals them.
+    await _labels(
+      'drrm-rain-lbl-src',
+      'drrm-rain-label',
+      size: 11,
+      allowOverlap: false,
+    );
   }
 
   Future<void> showTyphoon(Typhoon typhoon) async {
@@ -252,6 +265,7 @@ class OverlayRenderer {
     String layerId, {
     String color = '#1F2937',
     double size = 12,
+    bool allowOverlap = true,
   }) async {
     await controller.addSymbolLayer(
       sourceId,
@@ -263,7 +277,7 @@ class OverlayRenderer {
         textHaloColor: '#FFFFFF',
         textHaloWidth: 1.5,
         textFont: _font,
-        textAllowOverlap: true,
+        textAllowOverlap: allowOverlap,
       ),
     );
   }

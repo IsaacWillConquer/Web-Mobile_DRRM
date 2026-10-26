@@ -170,7 +170,7 @@ class _MapLayersTab extends StatelessWidget {
           icon: Icons.water_drop_outlined,
           iconColor: const Color(0xFF3B82F6),
           title: 'Rain Forecast',
-          subtitle: 'Weekly rainfall forecast per region (Open-Meteo).',
+          subtitle: '7-day rainfall forecast per province (Open-Meteo).',
           overlay: MapOverlay.rainForecast,
           available: rainAvailable,
         ),

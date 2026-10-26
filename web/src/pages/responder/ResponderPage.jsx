@@ -6,6 +6,7 @@ import * as assignmentsService from "../../core/services/assignmentsService";
 import * as reportsService from "../../core/services/reportsService";
 import * as rescueRecordsService from "../../core/services/rescueRecordsService";
 import * as notificationsService from "../../core/services/notificationsService";
+import * as teamsService from "../../core/services/teamsService";
 import { updateAssignmentStatus } from "../../core/services/assignmentsService";
 import {
   Alert,
@@ -19,6 +20,7 @@ import {
   Spinner,
 } from "../../components/ui";
 import { statusChip } from "../dispatch/constants";
+import ResponderMap from "./ResponderMap";
 
 const ASSIGNMENT_FLOW = {
   dispatched: { label: "Dispatched", tone: "bg-blue-100 text-blue-800" },
@@ -29,11 +31,17 @@ const ASSIGNMENT_FLOW = {
   cancelled: { label: "Cancelled", tone: "bg-slate-200 text-slate-600" },
 };
 
+function formatTime(ts) {
+  const d = ts?.toDate?.();
+  return d ? d.toLocaleTimeString() : "just now";
+}
+
 const FILTERS = ["active", "completed", "all"];
 
 function useAssignmentsData() {
   const [assignments, setAssignments] = useState([]);
   const [reports, setReports] = useState({});
+  const [teams, setTeams] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -60,22 +68,35 @@ function useAssignmentsData() {
       },
       () => {},
     );
+    const unsubT = teamsService.watchTeams(
+      (snap) => {
+        const map = {};
+        snap.docs.forEach((d) => {
+          map[d.id] = { id: d.id, ...d.data() };
+        });
+        setTeams(map);
+      },
+      () => {},
+    );
     return () => {
       unsubA();
       unsubR();
+      unsubT();
     };
   }, []);
 
-  return { assignments, reports, loading, error };
+  return { assignments, reports, teams, loading, error };
 }
 
 export default function ResponderPage() {
   const { user } = useAuth();
-  const { assignments, reports, loading, error } = useAssignmentsData();
+  const { assignments, reports, teams, loading, error } = useAssignmentsData();
   const [filter, setFilter] = useState("active");
   const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState("");
   const [completing, setCompleting] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [notice, setNotice] = useState("");
 
   const filtered = useMemo(() => {
     if (filter === "all") return assignments;
@@ -85,14 +106,61 @@ export default function ResponderPage() {
     );
   }, [assignments, filter]);
 
-  async function accept(assignment) {
+  // Pings every member of the assigned team so their phone shows the
+  // "Rescue assigned" popup with the Start Tracking button.
+  async function notifyTeam(assignment) {
+    const team = teams[assignment.teamId];
+    const members = team?.memberUids ?? [];
+    const report = reports[assignment.reportId];
+    const where =
+      report?.lat != null ? ` at ${report.lat.toFixed(4)}, ${report.lng.toFixed(4)}` : "";
+    const results = await Promise.all(
+      members.map((uid) =>
+        notificationsService
+          .createNotification({
+            userId: uid,
+            type: "rescue_assigned",
+            title: "Rescue assigned",
+            body: `${report?.disasterType ?? "Incident"} rescue${where}. Tap Start Tracking to head out.`,
+            assignmentId: assignment.id,
+            reportId: assignment.reportId ?? null,
+          })
+          .then(() => true)
+          .catch(() => false),
+      ),
+    );
+    return { sent: results.filter(Boolean).length, total: members.length };
+  }
+
+  async function confirmRescue(assignment) {
     setBusyId(assignment.id);
     setActionError("");
+    setNotice("");
     try {
       await updateAssignmentStatus(assignment.id, "accepted", user.uid);
+      const { sent, total } = await notifyTeam(assignment);
       await logAction(user.uid, "assignment_accept", { assignmentId: assignment.id });
+      setNotice(
+        total === 0
+          ? "Rescue confirmed, but no members are linked to this team yet. Add members to the team in Dispatch."
+          : `Rescue confirmed. ${sent} of ${total} team member(s) notified on mobile.`,
+      );
     } catch (err) {
-      setActionError(err.message ?? "Could not accept the assignment.");
+      setActionError(err.message ?? "Could not confirm the rescue.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function resendNotification(assignment) {
+    setBusyId(assignment.id);
+    setActionError("");
+    setNotice("");
+    try {
+      const { sent, total } = await notifyTeam(assignment);
+      setNotice(`Notification re-sent to ${sent} of ${total} team member(s).`);
+    } catch (err) {
+      setActionError(err.message ?? "Could not notify the team.");
     } finally {
       setBusyId(null);
     }
@@ -190,10 +258,16 @@ export default function ResponderPage() {
     [assignments],
   );
 
+  // Selected card (defaults to the first one in the list)
+  const activeAssignment =
+    filtered.find((a) => a.id === selectedId) ?? filtered[0] ?? null;
+  const activeId = activeAssignment?.id ?? null;
+  const activeReport = activeAssignment ? reports[activeAssignment.reportId] : null;
+
   return (
     <AppShell
       title="Responder"
-      subtitle="Accept assignments, update status, and record rescue outcomes."
+      subtitle="Review the map, confirm the rescue, and follow the team live."
     >
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <StatCard label="Active" value={counts.active} tone="text-amber-600" icon="clock" />
@@ -223,6 +297,7 @@ export default function ResponderPage() {
       </div>
 
       {actionError ? <Alert tone="danger" className="mb-4">{actionError}</Alert> : null}
+      {notice ? <Alert tone="success" className="mb-4">{notice}</Alert> : null}
 
       {loading ? (
         <div className="flex items-center gap-2 py-10 text-slate-500">
@@ -239,90 +314,178 @@ export default function ResponderPage() {
           description="Dispatchers create assignments from the Dispatch page. They'll show up here for the rescue team."
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {filtered.map((assignment) => {
-            const report = reports[assignment.reportId];
-            const flow = ASSIGNMENT_FLOW[assignment.status] ?? {
-              label: assignment.status,
-              tone: "bg-slate-100 text-slate-700",
-            };
-            const busy = busyId === assignment.id;
-            return (
-              <Card key={assignment.id} className="flex flex-col p-5">
-                <div className="flex items-start justify-between gap-3">
+        <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
+          {/* Left: assignment cards (click one to see it on the map) */}
+          <div className="space-y-3 lg:max-h-[calc(100vh-18rem)] lg:overflow-y-auto lg:pr-1">
+            {filtered.map((assignment) => {
+              const report = reports[assignment.reportId];
+              const flow = ASSIGNMENT_FLOW[assignment.status] ?? {
+                label: assignment.status,
+                tone: "bg-slate-100 text-slate-700",
+              };
+              const selected = assignment.id === activeId;
+              return (
+                <button
+                  key={assignment.id}
+                  type="button"
+                  onClick={() => setSelectedId(assignment.id)}
+                  className={`w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition-colors ${
+                    selected
+                      ? "border-blue-600 ring-2 ring-blue-600/15"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-slate-900">
+                        {report?.disasterType ?? "Incident"}
+                      </h3>
+                      <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500">
+                        <Icon name="location" className="h-3.5 w-3.5" />
+                        {report?.lat != null
+                          ? `${report.lat.toFixed(4)}, ${report.lng.toFixed(4)}`
+                          : "Location unavailable"}
+                      </p>
+                    </div>
+                    <Badge className={flow.tone}>{flow.label}</Badge>
+                  </div>
+                  {report?.description ? (
+                    <p className="mt-2 line-clamp-2 text-sm text-slate-600">{report.description}</p>
+                  ) : null}
+                  <p className="mt-2 text-xs font-medium text-blue-700">View on map &rarr;</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right: map + details + actions for the selected assignment */}
+          <Card className="flex flex-col overflow-hidden p-0">
+            <div className="h-[380px] w-full p-3 pb-0">
+              <ResponderMap
+                destination={
+                  activeReport?.lat != null
+                    ? {
+                        lat: activeReport.lat,
+                        lng: activeReport.lng,
+                        disasterType: activeReport.disasterType,
+                        priority: activeReport.priority,
+                      }
+                    : null
+                }
+                responderLocation={
+                  activeAssignment?.status === "in_progress" ? activeAssignment.responderLocation : null
+                }
+              />
+            </div>
+
+            {activeAssignment ? (
+              <div className="p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h3 className="font-semibold text-slate-900">
-                      {report?.disasterType ?? "Incident"}
-                    </h3>
-                    <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500">
-                      <Icon name="location" className="h-3.5 w-3.5" />
-                      {report?.lat != null
-                        ? `${report.lat.toFixed(4)}, ${report.lng.toFixed(4)}`
-                        : "Location unavailable"}
+                    <h2 className="text-lg font-bold text-slate-900">
+                      {activeReport?.disasterType ?? "Incident"} rescue
+                    </h2>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Team: {teams[activeAssignment.teamId]?.name ?? "Unassigned"}
+                      {activeReport ? (
+                        <>
+                          {" "}
+                          · <span className={statusChip(activeReport.status)}>{activeReport.status}</span>
+                        </>
+                      ) : null}
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge className={flow.tone}>{flow.label}</Badge>
-                    {report ? <span className={statusChip(report.status)}>{report.status}</span> : null}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {activeAssignment.status === "dispatched" ? (
+                      <>
+                        <Button
+                          onClick={() => confirmRescue(activeAssignment)}
+                          disabled={busyId === activeAssignment.id}
+                        >
+                          {busyId === activeAssignment.id ? (
+                            <Spinner className="h-4 w-4" />
+                          ) : (
+                            <Icon name="check" className="h-4 w-4" />
+                          )}
+                          Confirm rescue
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => decline(activeAssignment)}
+                          disabled={busyId === activeAssignment.id}
+                        >
+                          Decline
+                        </Button>
+                      </>
+                    ) : null}
+
+                    {activeAssignment.status === "accepted" ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          onClick={() => resendNotification(activeAssignment)}
+                          disabled={busyId === activeAssignment.id}
+                        >
+                          Notify team again
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => start(activeAssignment)}
+                          disabled={busyId === activeAssignment.id}
+                        >
+                          Start without app
+                        </Button>
+                      </>
+                    ) : null}
+
+                    {activeAssignment.status === "in_progress" ? (
+                      <Button
+                        variant="success"
+                        onClick={() => setCompleting(activeAssignment)}
+                        disabled={busyId === activeAssignment.id}
+                      >
+                        <Icon name="check" className="h-4 w-4" />
+                        Complete &amp; record outcome
+                      </Button>
+                    ) : null}
+
+                    {activeAssignment.status === "completed" ? (
+                      <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700">
+                        <Icon name="check" className="h-4 w-4" /> Resolved
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 
-                {report?.description ? (
-                  <p className="mt-3 line-clamp-2 text-sm text-slate-600">{report.description}</p>
+                {activeAssignment.status === "accepted" ? (
+                  <p className="mt-3 rounded-lg bg-indigo-50 p-3 text-xs text-indigo-900">
+                    Confirmed. Waiting for the team to tap <strong>Start Tracking</strong> on their phone.
+                  </p>
                 ) : null}
 
-                <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-                  {assignment.status === "dispatched" ? (
-                    <>
-                      <Button size="sm" onClick={() => accept(assignment)} disabled={busy}>
-                        {busy ? <Spinner className="h-4 w-4" /> : <Icon name="check" className="h-4 w-4" />}
-                        Accept
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => decline(assignment)}
-                        disabled={busy}
-                      >
-                        Decline
-                      </Button>
-                    </>
-                  ) : null}
+                {activeAssignment.status === "in_progress" ? (
+                  <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+                    {activeAssignment.responderLocation
+                      ? `Team is en route. Last GPS update: ${formatTime(activeAssignment.responderLocation.updatedAt)}.`
+                      : "Team started tracking. Waiting for the first GPS update..."}
+                  </p>
+                ) : null}
 
-                  {assignment.status === "accepted" ? (
-                    <Button size="sm" variant="primary" onClick={() => start(assignment)} disabled={busy}>
-                      <Icon name="responder" className="h-4 w-4" />
-                      Start response
-                    </Button>
-                  ) : null}
+                {activeReport?.description ? (
+                  <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{activeReport.description}</p>
+                ) : null}
 
-                  {assignment.status === "in_progress" ? (
-                    <Button
-                      size="sm"
-                      variant="success"
-                      onClick={() => setCompleting(assignment)}
-                      disabled={busy}
-                    >
-                      <Icon name="check" className="h-4 w-4" />
-                      Complete &amp; record outcome
-                    </Button>
-                  ) : null}
-
-                  {assignment.status === "completed" ? (
-                    <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700">
-                      <Icon name="check" className="h-4 w-4" /> Resolved
-                    </span>
-                  ) : null}
-
-                  {assignment.status === "declined" || assignment.status === "cancelled" ? (
-                    <span className="text-sm text-slate-400">
-                      {ASSIGNMENT_FLOW[assignment.status]?.label ?? assignment.status}
-                    </span>
-                  ) : null}
-                </div>
-              </Card>
-            );
-          })}
+                {activeAssignment.notes ? (
+                  <p className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-900">
+                    <span className="font-bold">Dispatcher notes:</span> {activeAssignment.notes}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="p-5 text-sm text-slate-400">Click an assignment card to see it on the map.</p>
+            )}
+          </Card>
         </div>
       )}
 

@@ -3,23 +3,17 @@ import AppShell from "../../components/AppShell";
 import * as reportsService from "../../core/services/reportsService";
 import * as rescueRecordsService from "../../core/services/rescueRecordsService";
 import { watchAllUsers } from "../../core/services/usersService";
-import { Button, Card, EmptyState, Icon, Spinner } from "../../components/ui";
+import { Badge, Button, Card, EmptyState, Icon, Spinner } from "../../components/ui";
 import {
   AreaTrend,
-  Bars,
   Donut,
   DonutLegend,
   HBarList,
 } from "../../components/charts";
 import { CHART_COLORS, PALETTE } from "../../components/chartColors";
 import { DISASTER_TYPES } from "../../config/appConfig";
-import {
-  AGE_BUCKETS,
-  ageBucket,
-  formatDuration,
-  isActiveStatus,
-  statusChip,
-} from "../dispatch/constants";
+import { statusChip } from "../dispatch/constants";
+import IncidentMap from "./IncidentMap";
 
 const OPEN_STATUSES = [
   "Submitted",
@@ -44,6 +38,12 @@ const STATUS_COLORS = {
   Cancelled: CHART_COLORS.red,
 };
 
+const PRIORITY_COLORS = {
+  high: CHART_COLORS.red,
+  medium: CHART_COLORS.amber,
+  low: CHART_COLORS.emerald,
+};
+
 const RANGES = [
   { id: "7d", label: "7 days" },
   { id: "30d", label: "30 days" },
@@ -66,12 +66,21 @@ function formatDateTime(ts) {
   return d ? d.toLocaleString() : "—";
 }
 
+function formatDuration(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
+  const minutes = ms / 60000;
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${hours.toFixed(1)}h`;
+  return `${(hours / 24).toFixed(1)}d`;
+}
+
 function toCsv(rows, rescuedByReport = {}) {
   const headers = [
     "id",
     "disasterType",
     "status",
-    "waitingMinutes",
+    "priority",
     "peopleAffected",
     "peopleRescued",
     "area",
@@ -87,7 +96,7 @@ function toCsv(rows, rescuedByReport = {}) {
         r.id,
         r.disasterType,
         r.status,
-        isActiveStatus(r.status) ? Math.round((r._waitingMs ?? 0) / 60000) : "",
+        r.priority,
         r.peopleAffected,
         rescuedByReport[r.id] ?? "",
         r._area,
@@ -110,6 +119,9 @@ export default function DmoPage() {
   const [error, setError] = useState("");
   const [range, setRange] = useState("30d");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [breakdown, setBreakdown] = useState("status");
+  const [recordsTab, setRecordsTab] = useState("reports");
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const unsubR = reportsService.watchReports(
@@ -144,6 +156,14 @@ export default function DmoPage() {
     return map;
   }, [users]);
 
+  const typeByReportId = useMemo(() => {
+    const map = {};
+    reports.forEach((r) => {
+      map[r.id] = r.disasterType;
+    });
+    return map;
+  }, [reports]);
+
   function areaOf(report) {
     const user = userById[report.reporterId];
     const address = user?.profile?.address ?? user?.address ?? null;
@@ -165,17 +185,8 @@ export default function DmoPage() {
   }, [range]);
 
   const scoped = useMemo(() => {
-    const now = Date.now();
     return reports
-      .map((r) => {
-        const date = tsToDate(r.createdAt);
-        return {
-          ...r,
-          _date: date,
-          _area: areaOf(r),
-          _waitingMs: date ? Math.max(0, now - date.getTime()) : 0,
-        };
-      })
+      .map((r) => ({ ...r, _date: tsToDate(r.createdAt), _area: areaOf(r) }))
       .filter((r) => {
         if (typeFilter !== "all" && r.disasterType !== typeFilter) return false;
         if (rangeStart && (!r._date || r._date < rangeStart)) return false;
@@ -186,6 +197,7 @@ export default function DmoPage() {
 
   const stats = useMemo(() => {
     const byStatus = {};
+    const byPriority = { high: 0, medium: 0, low: 0 };
     const byType = {};
     const byArea = {};
     let people = 0;
@@ -202,6 +214,7 @@ export default function DmoPage() {
 
     scoped.forEach((r) => {
       byStatus[r.status ?? "Unknown"] = (byStatus[r.status ?? "Unknown"] ?? 0) + 1;
+      if (byPriority[r.priority] != null) byPriority[r.priority] += 1;
       byType[r.disasterType ?? "Other"] = (byType[r.disasterType ?? "Other"] ?? 0) + 1;
       if (!byArea[r._area]) byArea[r._area] = { reports: 0, people: 0 };
       byArea[r._area].reports += 1;
@@ -218,15 +231,10 @@ export default function DmoPage() {
       .sort((a, b) => b[1] - a[1])
       .map(([label, value]) => ({ label, value, color: STATUS_COLORS[label] ?? CHART_COLORS.slate }));
 
-    const byAge = { critical: 0, urgent: 0, recent: 0, new: 0 };
-    scoped.forEach((r) => {
-      if (!isActiveStatus(r.status)) return;
-      byAge[ageBucket(r._waitingMs).key] += 1;
-    });
-    const ageData = AGE_BUCKETS.map((b) => ({
-      label: b.label,
-      value: byAge[b.key],
-      color: b.color,
+    const priorityData = ["high", "medium", "low"].map((p) => ({
+      label: p,
+      value: byPriority[p],
+      color: PRIORITY_COLORS[p],
     }));
 
     const typeData = Object.entries(byType)
@@ -258,12 +266,14 @@ export default function DmoPage() {
     });
     const average = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
-    const scopedRecords = rangeStart
-      ? records.filter((rec) => {
-          const created = tsToDate(rec.createdAt);
-          return created && created >= rangeStart;
-        })
-      : records;
+    const scopedRecords = records.filter((rec) => {
+      if (rangeStart) {
+        const created = tsToDate(rec.createdAt);
+        if (!created || created < rangeStart) return false;
+      }
+      if (typeFilter !== "all") return typeByReportId[rec.reportId] === typeFilter;
+      return true;
+    });
     const rescuedByReport = {};
     let peopleRescued = 0;
     scopedRecords.forEach((rec) => {
@@ -285,18 +295,20 @@ export default function DmoPage() {
       avgResolve: average(resolveDurations),
       rescueOps: scopedRecords.length,
       peopleRescued,
+      rescuedShare: people ? Math.min(100, Math.round((peopleRescued / people) * 100)) : 0,
+      avgPerOp: scopedRecords.length ? (peopleRescued / scopedRecords.length).toFixed(1) : "—",
       rescuedByReport,
       recentRecords: scopedRecords
         .map((rec) => ({ ...rec, _date: tsToDate(rec.createdAt) }))
         .sort((a, b) => (b._date?.getTime() ?? 0) - (a._date?.getTime() ?? 0))
         .slice(0, 10),
       statusData,
-      ageData,
+      priorityData,
       typeData,
       areaData,
       trendData,
     };
-  }, [scoped, range, rangeStart, records]);
+  }, [scoped, range, rangeStart, records, typeFilter, typeByReportId]);
 
   function exportCsv() {
     const blob = new Blob([toCsv(scoped, stats.rescuedByReport)], {
@@ -335,7 +347,7 @@ export default function DmoPage() {
     const win = window.open("", "_blank", "width=900,height=1000");
     if (!win) return;
     win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-      <title>DRRM Operational Report</title>
+      <title>kapIT Operational Report</title>
       <style>
         body{font-family:system-ui,Segoe UI,Roboto,sans-serif;color:#0f172a;padding:32px;}
         h1{font-size:20px;margin:0 0 4px;}
@@ -349,7 +361,7 @@ export default function DmoPage() {
         .kpi .v{font-size:22px;font-weight:700;}
         .kpi .l{font-size:11px;text-transform:uppercase;color:#64748b;}
       </style></head><body>
-      <h1>DRRM — Operational Report</h1>
+      <h1>kapIT — Operational Report</h1>
       <p class="muted">Generated ${new Date().toLocaleString()} · Range: ${
         range === "all" ? "All time" : range === "7d" ? "Last 7 days" : "Last 30 days"
       } · Type: ${typeFilter === "all" ? "All" : typeFilter}</p>
@@ -388,37 +400,66 @@ export default function DmoPage() {
     </>
   );
 
+  const recentReports = useMemo(
+    () =>
+      [...scoped]
+        .sort((a, b) => (b._date?.getTime() ?? 0) - (a._date?.getTime() ?? 0))
+        .slice(0, 10),
+    [scoped],
+  );
+
+  const filtersChanged = range !== "30d" || typeFilter !== "all";
+  const rowLimit = expanded ? 10 : 5;
+  const recordRows = recordsTab === "reports" ? recentReports : stats.recentRecords;
+
+  function resetFilters() {
+    setRange("30d");
+    setTypeFilter("all");
+  }
+
+  function changeRecordsTab(next) {
+    setRecordsTab(next);
+    setExpanded(false);
+  }
+
+  // Past incidents on a map. Has its own Week / Month / Year chips, so it still
+  // works when the page filters above find nothing.
+  const mapSection = (
+    <Section
+      id="analytics-map"
+      title="Hotspots"
+      question="Where have incidents happened over time?"
+    >
+      <IncidentMap
+        reports={reports}
+        records={records}
+        typeFilter={typeFilter}
+        areaOf={areaOf}
+      />
+    </Section>
+  );
+
   return (
     <AppShell
       title="Operations Analytics"
       subtitle="Incident trends, area coverage, and operational reporting."
       actions={actions}
     >
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+      {/* Controls: only two filters (Hick), large targets (Fitts), one shared control style (Similarity) */}
+      <div className="mb-8 flex flex-wrap items-center gap-3">
+        <div className="flex min-h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75 motion-reduce:animate-none" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </span>
           Live
         </div>
-        <div className="flex rounded-full bg-white p-0.5 ring-1 ring-inset ring-slate-200">
-          {RANGES.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setRange(r.id)}
-              className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-                range === r.id ? "bg-blue-700 text-white" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Time range" options={RANGES} value={range} onChange={setRange} />
         <select
+          aria-label="Disaster type"
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-blue-600"
+          className="min-h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 outline-none focus:border-blue-600 focus-visible:ring-2 focus-visible:ring-blue-600/20"
         >
           <option value="all">All disaster types</option>
           {DISASTER_TYPES.map((t) => (
@@ -427,6 +468,11 @@ export default function DmoPage() {
             </option>
           ))}
         </select>
+        {filtersChanged ? (
+          <Button variant="ghost" className="min-h-10" onClick={resetFilters}>
+            Reset filters
+          </Button>
+        ) : null}
       </div>
 
       {loading ? (
@@ -440,226 +486,456 @@ export default function DmoPage() {
           </p>
         </Card>
       ) : scoped.length === 0 ? (
-        <EmptyState
-          icon="analytics"
-          title="No incident data in this range"
-          description="Adjust the filters, or once residents submit reports, trends and area coverage will appear here."
-        />
+        <div className="space-y-10">
+          <EmptyState
+            icon="analytics"
+            title="No incident data in this range"
+            description="Adjust the filters, or once residents submit reports, trends and area coverage will appear here."
+          />
+          {mapSection}
+        </div>
       ) : (
-        <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Kpi label="Reports" value={stats.total} tone="text-slate-900" icon="inbox" />
-            <Kpi label="Reporters" value={stats.reporters} tone="text-blue-700" icon="staff" />
-            <Kpi label="Open" value={stats.open} tone="text-amber-600" icon="clock" />
-            <Kpi label="Resolved" value={stats.resolved} tone="text-emerald-600" icon="check" />
-            <Kpi
-              label="Resolve rate"
-              value={stats.resolveRate}
-              suffix="%"
-              tone="text-teal-600"
-              icon="shield"
-            />
-            <Kpi
-              label="People affected"
-              value={stats.people}
-              tone="text-red-600"
-              icon="alert"
-            />
-            <Kpi
-              label="Rescue operations"
-              value={stats.rescueOps}
-              tone="text-sky-600"
-              icon="responder"
-            />
-            <Kpi
-              label="People rescued"
-              value={stats.peopleRescued}
-              tone="text-emerald-600"
-              icon="check"
-            />
-            <Kpi
-              label="Avg time to verify"
-              value={formatDuration(stats.avgVerify)}
-              tone="text-indigo-600"
-              icon="clock"
-            />
-            <Kpi
-              label="Avg time to resolve"
-              value={formatDuration(stats.avgResolve)}
-              tone="text-violet-600"
-              icon="check"
-            />
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="p-6">
-              <h3 className="mb-4 font-semibold text-slate-900">Reports by status</h3>
-              <div className="flex flex-col items-center gap-6 sm:flex-row">
-                <Donut data={stats.statusData} centerLabel="Total" />
-                <div className="w-full flex-1">
-                  <DonutLegend data={stats.statusData} />
-                </div>
+        <div className="space-y-10">
+          {/* LEVEL 1: the answer in three numbers (Von Restorff + serial position: biggest item first) */}
+          <Section
+            id="analytics-glance"
+            title="At a glance"
+            question="How is the response going right now?"
+          >
+            <Card className="overflow-hidden">
+              <div className="border-b border-slate-100 px-6 py-4">
+                <p className="text-lg font-semibold text-slate-900">
+                  {stats.open} of {stats.total}{" "}
+                  {stats.total === 1 ? "report is" : "reports are"} still open
+                </p>
+                <p className="text-sm text-slate-500">
+                  Showing {RANGE_LABEL[range].toLowerCase()},{" "}
+                  {typeFilter === "all" ? "all disaster types" : typeFilter.toLowerCase()}.
+                </p>
               </div>
-            </Card>
-
-            <Card className="p-6">
-              <h3 className="mb-4 font-semibold text-slate-900">Open reports by waiting time</h3>
-              <div className="flex flex-col items-center gap-6 sm:flex-row">
-                <Donut data={stats.ageData} centerLabel="Open" />
-                <div className="w-full flex-1">
-                  <DonutLegend data={stats.ageData} />
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          <Card className="p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-semibold text-slate-900">Reports per day</h3>
-              <span className="text-xs text-slate-400">
-                {range === "all" ? "Last 14 days" : range === "7d" ? "Last 7 days" : "Last 30 days"}
-              </span>
-            </div>
-            <AreaTrend data={stats.trendData} color={CHART_COLORS.blue} />
-          </Card>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="p-6">
-              <h3 className="mb-4 font-semibold text-slate-900">Incidents by type</h3>
-              <Bars data={stats.typeData} color={CHART_COLORS.blue} />
-            </Card>
-
-            <Card className="p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-semibold text-slate-900">Reports by area</h3>
-                <span className="text-xs text-slate-400">Where residents reported from</span>
-              </div>
-              {stats.areaData.length === 0 ? (
-                <p className="text-sm text-slate-500">No area data available.</p>
-              ) : (
-                <HBarList
-                  data={stats.areaData.slice(0, 7).map((a, i) => ({
-                    label: `${a.label} · ${a.people} affected`,
-                    value: a.value,
-                    color: PALETTE[i % PALETTE.length],
-                  }))}
+              <div className="grid divide-y divide-slate-100 md:grid-cols-3 md:divide-x md:divide-y-0">
+                <HeroStat
+                  emphasis
+                  label="Open now"
+                  value={stats.open}
+                  caption={`of ${stats.total} reports`}
+                  pct={stats.total ? Math.round((stats.open / stats.total) * 100) : 0}
+                  tone="text-amber-600"
+                  barClass="bg-amber-500"
                 />
-              )}
-            </Card>
-          </div>
-
-          <Card className="overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <h3 className="font-semibold text-slate-900">Recent rescue operations</h3>
-              <span className="text-xs text-slate-400">
-                {stats.rescueOps} in range · {stats.peopleRescued} rescued
-              </span>
-            </div>
-            {stats.recentRecords.length === 0 ? (
-              <p className="px-6 py-6 text-sm text-slate-500">
-                No rescue outcomes recorded in this range.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-6 py-3 font-medium">When</th>
-                      <th className="px-6 py-3 font-medium">People rescued</th>
-                      <th className="px-6 py-3 font-medium">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {stats.recentRecords.map((rec) => (
-                      <tr key={rec.id}>
-                        <td className="whitespace-nowrap px-6 py-3 text-slate-500">
-                          {rec._date ? rec._date.toLocaleString() : "—"}
-                        </td>
-                        <td className="px-6 py-3 font-semibold tabular-nums text-slate-800">
-                          {rec.peopleRescued ?? 0}
-                        </td>
-                        <td className="max-w-md truncate px-6 py-3 text-slate-600">
-                          {rec.notes || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <HeroStat
+                  label="Resolve rate"
+                  value={stats.resolveRate}
+                  suffix="%"
+                  caption={`${stats.resolved} resolved`}
+                  pct={stats.resolveRate}
+                  tone="text-emerald-600"
+                  barClass="bg-emerald-500"
+                />
+                <HeroStat
+                  label="Rescued of affected"
+                  value={stats.rescuedShare}
+                  suffix="%"
+                  caption={`${stats.peopleRescued} of ${stats.people} people`}
+                  pct={stats.rescuedShare}
+                  tone="text-teal-600"
+                  barClass="bg-teal-500"
+                />
               </div>
-            )}
-          </Card>
+            </Card>
+          </Section>
 
-          <Card className="overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <h3 className="font-semibold text-slate-900">Recent reports</h3>
-              <span className="text-xs text-slate-400">{scoped.length} in range</span>
+          {/* LEVEL 2: supporting metrics grouped by the question they answer (Proximity + Common region, max 3 per group) */}
+          <Section
+            id="analytics-detail"
+            title="What is behind the numbers"
+            question="How big is the load, how fast are we responding, and what did rescues achieve?"
+          >
+            <div className="grid gap-4 lg:grid-cols-3">
+              <MetricGroup
+                id="group-load"
+                title="Incident load"
+                question="How much is coming in?"
+                icon="inbox"
+                accent={ACCENTS.blue}
+                footer={<PrioritySplit data={stats.priorityData} />}
+              >
+                <MetricRow label="Reports" value={stats.total} />
+                <MetricRow label="Reporters" value={stats.reporters} tone="text-blue-700" />
+                <MetricRow label="People affected" value={stats.people} tone="text-red-600" />
+              </MetricGroup>
+
+              <MetricGroup
+                id="group-speed"
+                title="Response speed"
+                question="How fast do we act?"
+                icon="clock"
+                accent={ACCENTS.indigo}
+              >
+                <MetricRow
+                  label="Avg time to verify"
+                  value={formatDuration(stats.avgVerify)}
+                  tone="text-indigo-600"
+                />
+                <MetricRow
+                  label="Avg time to resolve"
+                  value={formatDuration(stats.avgResolve)}
+                  tone="text-violet-600"
+                />
+                <MetricRow label="Resolved" value={stats.resolved} tone="text-emerald-600" />
+              </MetricGroup>
+
+              <MetricGroup
+                id="group-rescue"
+                title="Rescue outcomes"
+                question="What did field teams achieve?"
+                icon="responder"
+                accent={ACCENTS.emerald}
+              >
+                <MetricRow label="Rescue operations" value={stats.rescueOps} tone="text-sky-600" />
+                <MetricRow
+                  label="People rescued"
+                  value={stats.peopleRescued}
+                  tone="text-emerald-600"
+                />
+                <MetricRow label="Avg rescued per operation" value={stats.avgPerOp} />
+              </MetricGroup>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-6 py-3 font-medium">Type</th>
-                    <th className="px-6 py-3 font-medium">Area</th>
-                    <th className="px-6 py-3 font-medium">Status</th>
-                    <th className="px-6 py-3 font-medium">Waiting</th>
-                    <th className="px-6 py-3 font-medium">People</th>
-                    <th className="px-6 py-3 font-medium">Submitted</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {[...scoped]
-                    .sort((a, b) => (b._date?.getTime() ?? 0) - (a._date?.getTime() ?? 0))
-                    .slice(0, 10)
-                    .map((r) => (
-                      <tr key={r.id}>
-                        <td className="px-6 py-3 font-medium text-slate-800">
-                          {r.disasterType ?? "—"}
-                        </td>
-                        <td className="px-6 py-3 text-slate-600">{r._area}</td>
-                        <td className="px-6 py-3">
-                          <span className={statusChip(r.status)}>{r.status ?? "—"}</span>
-                        </td>
-                        <td className="px-6 py-3">
-                          {isActiveStatus(r.status) ? (
-                            <span
-                              className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
-                              style={{ background: ageBucket(r._waitingMs).color }}
-                            >
-                              {formatDuration(r._waitingMs)}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-3 tabular-nums text-slate-600">
-                          {r.peopleAffected ?? "—"}
-                        </td>
-                        <td className="px-6 py-3 text-slate-500">{formatDateTime(r.createdAt)}</td>
+          </Section>
+
+          {/* LEVEL 3: patterns. One breakdown visible at a time (progressive disclosure + Hick) */}
+          <Section
+            id="analytics-patterns"
+            title="Patterns"
+            question="When and where are incidents happening?"
+          >
+            <div className="grid gap-4 lg:grid-cols-5">
+              <Card className="p-6 lg:col-span-3">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="font-semibold text-slate-900">Reports per day</h3>
+                  <span className="text-xs text-slate-500">{TREND_LABEL[range]}</span>
+                </div>
+                <AreaTrend data={stats.trendData} color={CHART_COLORS.blue} />
+              </Card>
+
+              <Card className="p-6 lg:col-span-2">
+                <div className="mb-4 flex flex-col gap-3">
+                  <h3 className="font-semibold text-slate-900">Break down by</h3>
+                  <Segmented
+                    label="Breakdown"
+                    options={BREAKDOWNS}
+                    value={breakdown}
+                    onChange={setBreakdown}
+                    compact
+                  />
+                </div>
+                {breakdown === "status" || breakdown === "priority" ? (
+                  <div className="flex flex-col items-center gap-5">
+                    <Donut
+                      data={breakdown === "status" ? stats.statusData : stats.priorityData}
+                      centerLabel="Total"
+                    />
+                    <div className="w-full">
+                      <DonutLegend
+                        data={breakdown === "status" ? stats.statusData : stats.priorityData}
+                      />
+                    </div>
+                  </div>
+                ) : breakdown === "type" ? (
+                  <HBarList data={stats.typeData} />
+                ) : stats.areaData.length === 0 ? (
+                  <p className="text-sm text-slate-500">No area data available.</p>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-slate-500">Where residents reported from</p>
+                    <HBarList
+                      data={stats.areaData.slice(0, 7).map((a, i) => ({
+                        label: `${a.label} (${a.people} affected)`,
+                        value: a.value,
+                        color: PALETTE[i % PALETTE.length],
+                      }))}
+                    />
+                  </div>
+                )}
+              </Card>
+            </div>
+          </Section>
+
+          {/* LEVEL 3b: where it happens (heatmap / pins, own time range) */}
+          {mapSection}
+
+          {/* LEVEL 4: raw records, only on demand (Progressive disclosure) */}
+          <Section
+            id="analytics-records"
+            title="Records"
+            question="Which individual incidents and rescues make up these numbers?"
+          >
+            <Card className="overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
+                <Segmented
+                  label="Record type"
+                  options={RECORD_TABS}
+                  value={recordsTab}
+                  onChange={changeRecordsTab}
+                  compact
+                />
+                <span className="text-xs text-slate-500">
+                  {recordsTab === "reports"
+                    ? `${scoped.length} in range`
+                    : `${stats.rescueOps} in range, ${stats.peopleRescued} rescued`}
+                </span>
+              </div>
+
+              {recordRows.length === 0 ? (
+                <p className="px-6 py-6 text-sm text-slate-500">
+                  {recordsTab === "reports"
+                    ? "No reports in this range."
+                    : "No rescue outcomes recorded in this range."}
+                </p>
+              ) : recordsTab === "reports" ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th className="px-6 py-3 font-medium">Type</th>
+                        <th className="px-6 py-3 font-medium">Area</th>
+                        <th className="px-6 py-3 font-medium">Status</th>
+                        <th className="px-6 py-3 font-medium">Priority</th>
+                        <th className="px-6 py-3 font-medium">People</th>
+                        <th className="px-6 py-3 font-medium">Submitted</th>
                       </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {recordRows.slice(0, rowLimit).map((r) => (
+                        <tr key={r.id}>
+                          <td className="px-6 py-3 font-medium text-slate-800">
+                            {r.disasterType ?? "—"}
+                          </td>
+                          <td className="px-6 py-3 text-slate-600">{r._area}</td>
+                          <td className="px-6 py-3">
+                            <span className={statusChip(r.status)}>{r.status ?? "—"}</span>
+                          </td>
+                          <td className="px-6 py-3">
+                            <Badge
+                              className={`capitalize ${
+                                r.priority === "high"
+                                  ? "bg-red-100 text-red-700"
+                                  : r.priority === "medium"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-emerald-100 text-emerald-700"
+                              }`}
+                            >
+                              {r.priority ?? "—"}
+                            </Badge>
+                          </td>
+                          <td className="px-6 py-3 tabular-nums text-slate-600">
+                            {r.peopleAffected ?? "—"}
+                          </td>
+                          <td className="px-6 py-3 text-slate-500">
+                            {formatDateTime(r.createdAt)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th className="px-6 py-3 font-medium">When</th>
+                        <th className="px-6 py-3 font-medium">People rescued</th>
+                        <th className="px-6 py-3 font-medium">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {recordRows.slice(0, rowLimit).map((rec) => (
+                        <tr key={rec.id}>
+                          <td className="whitespace-nowrap px-6 py-3 text-slate-500">
+                            {rec._date ? rec._date.toLocaleString() : "—"}
+                          </td>
+                          <td className="px-6 py-3 font-semibold tabular-nums text-slate-800">
+                            {rec.peopleRescued ?? 0}
+                          </td>
+                          <td className="max-w-md truncate px-6 py-3 text-slate-600">
+                            {rec.notes || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {recordRows.length > 5 ? (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  aria-expanded={expanded}
+                  className="min-h-12 w-full border-t border-slate-100 text-sm font-semibold text-blue-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-700"
+                >
+                  {expanded ? "Show fewer" : `Show ${Math.min(10, recordRows.length)} most recent`}
+                </button>
+              ) : null}
+            </Card>
+          </Section>
         </div>
       )}
     </AppShell>
   );
 }
 
-function Kpi({ label, value, suffix = "", tone, icon }) {
+/* ---------- Presentational helpers for the analytics hierarchy ---------- */
+
+const RANGE_LABEL = { "7d": "Last 7 days", "30d": "Last 30 days", all: "All time" };
+const TREND_LABEL = { "7d": "Last 7 days", "30d": "Last 30 days", all: "Last 14 days" };
+
+const BREAKDOWNS = [
+  { id: "status", label: "Status" },
+  { id: "priority", label: "Priority" },
+  { id: "type", label: "Type" },
+  { id: "area", label: "Area" },
+];
+
+const RECORD_TABS = [
+  { id: "reports", label: "Recent reports" },
+  { id: "rescues", label: "Rescue operations" },
+];
+
+// Same hue = same meaning everywhere (Similarity): blue volume, indigo time, emerald outcomes.
+const ACCENTS = {
+  blue: { bg: "bg-blue-50", text: "text-blue-700" },
+  indigo: { bg: "bg-indigo-50", text: "text-indigo-700" },
+  emerald: { bg: "bg-emerald-50", text: "text-emerald-700" },
+};
+
+function Segmented({ label, options, value, onChange, compact = false }) {
   return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
-        <span className={tone}>
-          <Icon name={icon} className="h-4 w-4" />
-        </span>
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex flex-wrap rounded-xl bg-white p-1 ring-1 ring-inset ring-slate-200"
+    >
+      {options.map((o) => {
+        const active = value === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(o.id)}
+            className={`min-h-10 rounded-lg text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 ${
+              compact ? "px-3" : "px-4"
+            } ${active ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Section({ id, title, question, children }) {
+  return (
+    <section aria-labelledby={id} className="space-y-3">
+      <div>
+        <h2 id={id} className="text-lg font-semibold text-slate-900">
+          {title}
+        </h2>
+        <p className="text-sm text-slate-500">{question}</p>
       </div>
-      <p className={`mt-3 text-3xl font-bold tabular-nums ${tone}`}>
+      {children}
+    </section>
+  );
+}
+
+function HeroStat({ label, value, suffix = "", caption, pct, tone, barClass, emphasis = false }) {
+  return (
+    <div className={`px-6 py-5 ${emphasis ? "bg-amber-50/60" : ""}`}>
+      <p className="text-sm font-medium text-slate-600">{label}</p>
+      <p
+        className={`mt-1 font-bold tabular-nums ${tone} ${emphasis ? "text-6xl" : "text-5xl"}`}
+      >
         {value}
         {suffix}
       </p>
+      <div
+        className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+      >
+        <div className={`h-full rounded-full ${barClass}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-2 text-sm text-slate-500">{caption}</p>
+    </div>
+  );
+}
+
+function MetricGroup({ id, title, question, icon, accent, children, footer }) {
+  return (
+    <Card className="flex flex-col p-5" role="group" aria-labelledby={id}>
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${accent.bg} ${accent.text}`}
+        >
+          <Icon name={icon} className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <h3 id={id} className="font-semibold text-slate-900">
+            {title}
+          </h3>
+          <p className="text-xs text-slate-500">{question}</p>
+        </div>
+      </div>
+      <dl className="mt-3 divide-y divide-slate-100">{children}</dl>
+      {footer ? <div className="mt-auto border-t border-slate-100 pt-4">{footer}</div> : null}
     </Card>
+  );
+}
+
+function MetricRow({ label, value, suffix = "", tone = "text-slate-900" }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-3">
+      <dt className="text-sm text-slate-600">{label}</dt>
+      <dd className={`text-2xl font-bold tabular-nums ${tone}`}>
+        {value}
+        {suffix}
+      </dd>
+    </div>
+  );
+}
+
+function PrioritySplit({ data }) {
+  const total = data.reduce((sum, d) => sum + d.value, 0);
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-slate-600">Priority split</p>
+      <div className="flex h-2 overflow-hidden rounded-full bg-slate-100">
+        {total > 0 &&
+          data.map((d) =>
+            d.value > 0 ? (
+              <div
+                key={d.label}
+                title={`${d.label}: ${d.value}`}
+                style={{ width: `${(d.value / total) * 100}%`, background: d.color }}
+              />
+            ) : null,
+          )}
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+        {data.map((d) => (
+          <li key={d.label} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ background: d.color }} />
+            <span className="capitalize">{d.label}</span>
+            <span className="font-semibold tabular-nums text-slate-800">{d.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

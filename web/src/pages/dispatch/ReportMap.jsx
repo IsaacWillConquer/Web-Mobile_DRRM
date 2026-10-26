@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { ageBucket, formatDuration, tsMillis } from "./constants";
-import { STYLE_URL, hideNonPlaceLabels } from "./mapStyle";
+import { STYLE_URL, hideNonPlaceLabels, recolorWater } from "./mapStyle";
 
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 const CENTER = [121.774, 12.8797];
@@ -88,6 +88,7 @@ export default function ReportMap({
   mode = "pins",
   rankById = {},
   waitingById = {},
+  compact = false,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -133,28 +134,30 @@ export default function ReportMap({
         },
       });
 
-      map.on("click", "reports", (e) => {
-        const id = e.features?.[0]?.properties?.id;
-        if (id) onSelectRef.current?.(id);
-      });
-      map.on("mouseenter", "reports", (e) => {
-        map.getCanvas().style.cursor = "pointer";
-        const f = e.features?.[0];
-        if (f) {
-          popupRef.current
-            .setLngLat(f.geometry.coordinates)
-            .setText(f.properties.label ?? "")
-            .addTo(map);
-        }
-      });
-      map.on("mousemove", "reports", (e) => {
-        const f = e.features?.[0];
-        if (f && popupRef.current) popupRef.current.setLngLat(f.geometry.coordinates);
-      });
-      map.on("mouseleave", "reports", () => {
-        map.getCanvas().style.cursor = "";
-        popupRef.current?.remove();
-      });
+      if (!compact) {
+        map.on("click", "reports", (e) => {
+          const id = e.features?.[0]?.properties?.id;
+          if (id) onSelectRef.current?.(id);
+        });
+        map.on("mouseenter", "reports", (e) => {
+          map.getCanvas().style.cursor = "pointer";
+          const f = e.features?.[0];
+          if (f) {
+            popupRef.current
+              .setLngLat(f.geometry.coordinates)
+              .setText(f.properties.label ?? "")
+              .addTo(map);
+          }
+        });
+        map.on("mousemove", "reports", (e) => {
+          const f = e.features?.[0];
+          if (f && popupRef.current) popupRef.current.setLngLat(f.geometry.coordinates);
+        });
+        map.on("mouseleave", "reports", () => {
+          map.getCanvas().style.cursor = "";
+          popupRef.current?.remove();
+        });
+      }
 
       layersAdded = true;
       setReady(true);
@@ -174,7 +177,12 @@ export default function ReportMap({
       offset: 12,
     });
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+    if (compact) {
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
+    } else {
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+    }
     map.on("error", (e) => {
       console.error("[maplibre]", e?.error ?? e);
       if (!layersAdded) setMapError(true);
@@ -182,10 +190,12 @@ export default function ReportMap({
     // Add our pin layer as soon as the style is ready (independent of tiles).
     map.on("style.load", () => {
       hideNonPlaceLabels(map);
+      recolorWater(map);
       addLayers(map);
     });
     map.on("load", () => {
       hideNonPlaceLabels(map);
+      recolorWater(map);
       addLayers(map);
       map.resize();
     });
@@ -201,7 +211,7 @@ export default function ReportMap({
       mapRef.current = null;
       setReady(false);
     };
-  }, []);
+  }, [compact]);
 
   useEffect(() => {
     const map = mapRef.current;

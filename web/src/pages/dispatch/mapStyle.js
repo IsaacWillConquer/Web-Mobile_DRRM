@@ -2,6 +2,11 @@
 // and hide non-place labels after `style.load` in ReportMap (see there).
 export const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 
+// Tint the Positron water layers so oceans/lakes/rivers read as water while the
+// land stays calm grey.
+export const WATER_COLOR = "#B9D4EA";
+export const WATERWAY_COLOR = "#9CC0DC";
+
 // Symbol source-layers hidden so only place/boundary names remain.
 const DROPPED_LABEL_LAYERS = new Set([
   "transportation_name",
@@ -29,5 +34,20 @@ export function hideNonPlaceLabels(map, droppedLayers = DROPPED_LABEL_LAYERS) {
         // layer not present — ignore
       }
     }
+  }
+}
+
+// Recolors the basemap water (fill) and waterway (line) layers. Guarded so a
+// style without those layers never throws.
+export function recolorWater(map) {
+  try {
+    map.setPaintProperty("water", "fill-color", WATER_COLOR);
+  } catch {
+    // layer not present — ignore
+  }
+  try {
+    map.setPaintProperty("waterway", "line-color", WATERWAY_COLOR);
+  } catch {
+    // layer not present — ignore
   }
 }

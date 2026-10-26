@@ -80,7 +80,7 @@ Map redesign first, **then** P4b (offline queue, offline tiles, SMS fallback).
 - Empty state when there is no data
 
 ### Basemap
-Keep the stripped **Positron** style, but stop stripping the place labels that help orientation (cities, provinces).
+Keep the stripped **Positron** style, but stop stripping the place labels that help orientation (cities, provinces). **Water is tinted blue** — the `water` (fill) and `waterway` (line) layers are overridden to `#B9D4EA` / `#9CC0DC` on both mobile (`MapStyles.resolveDefaultStyle`) and web (`recolorWater` in `dispatch/mapStyle.js`), so oceans/lakes/rivers read as water while the land stays calm grey.
 
 ---
 
@@ -103,11 +103,11 @@ Keep the stripped **Positron** style, but stop stripping the place labels that h
 | 1 | Camera fit (`camera_fit.dart`, `map_tab.dart`, tests) | Delivered — analyze clean, 12/12 tests pass; **awaiting device check of padding** |
 | 2a | Typhoon **data layer**: `typhoon_geo.js` (PAGASA classifier, cone builder, JMA parser), `storm_sim_data.js` + `seed_storm_sim.js` (`bulletins/simulation`), `fetch_typhoon.js` rewrite (cone, wind, stale-field cleanup, `--dry-run`/`--fixture`), `fetch-data.yml` fix, 13 Node tests | Delivered — Node tests pass; **awaiting your run + `fetch_typhoon.js --dry-run` against live JMA** |
 | 2b | Typhoon **rendering** (Flutter): model + `pagasa.dart` classifier, past/forecast lines, cone, gale + storm-force rings, category markers, SIMULATION badge/chip, live-vs-simulation selection, camera fit update, 3 new Dart test files | Delivered — Node tests pass, Dart files syntax-checked only; **awaiting `flutter analyze` / `flutter test` + device check** |
-| 3 | Storm signals labels + legend | Not started |
-| 4 | Rain per province (+ find why it currently renders nothing) | Not started |
+| 3 | Storm signals: one label per province (not per island), wind-signal legend from the same colour table as the map; same one-label fix applied to rain regions | Delivered — **awaiting `flutter analyze` / `flutter test` + device check** |
+| 4 | Rain per province: `rain_geo.js`, per-province `fetch_rain.js` (84 Open-Meteo points from the app's own GeoJSON), per-province demo that follows the simulation storm, mm labels, rain legend, model reads `provinces` (falls back to `regions`) | Delivered — Node tests pass (35), Dart syntax-checked only; **awaiting `flutter analyze` / `flutter test` + device check** |
 | 5 | Alert card, layer sheet, status / stale / empty states | Not started |
 | 6 | Bottom nav visual refresh | Not started |
-| 7 | Web dispatch overlays (top-right controls, avoid the bottom-left rescue-queue legend) | Not started |
+| 7 | Web dispatch overlays (top-right controls, avoid the bottom-left priority legend) | Not started |
 
 ---
 
@@ -122,10 +122,10 @@ Keep the stripped **Positron** style, but stop stripping the place labels that h
 | Demo wind/category mismatch | `maxWindsKph: 95` but category "Tropical Storm"; on PAGASA scale 95 km/h = STS. Use ~85 km/h (verify Ondoy's PAGASA peak) | Step 2 |
 | Cron workflow invalid | `fetch-data.yml` line 31 uses `secrets` in a job-level `if` → "Unrecognized named-value: 'secrets'", every run fails instantly | Step 2 |
 | No GitHub secret | Repo has no `FIREBASE_SERVICE_ACCOUNT`. Owner (IsaacWillConquer) must add it (Firebase → Service accounts → new key → repo secret). Never commit or paste the key | Manual |
-| Rain layer renders nothing | All 17 region names match the GeoJSON, so not a naming issue. Errors are swallowed (`_safe`, `clear()`) | Step 4 |
-| Signals labels may not show | No `textFont` set; default font may be missing from the Positron glyph set (verify on device) | Step 3 |
+| Rain layer was blank, then drew | Names matched all along. It drew after step 1 and its cause was never found; rain is now per province with a legend, labels (mm) and a one-point-per-province fetch | Step 4 |
+| Signals labels did not show / were duplicated | Default font missing from the basemap glyphs (fixed in 2b: `Noto Sans Bold`, labels now draw), and MapLibre labelled every island of a multi-part province (fixed in 3 with a separate label point per feature) | 2b + 3 |
 | Secrets in the zip | `web/.env`, `map_config.dart` (MapTiler key), `google-services.json` are gitignored but were zipped. Restrict the MapTiler key to the app package | Manual |
-| Web map layout | MapLibre GL, Pins/Density toggle top-right, rescue-queue legend bottom-left | Step 7 |
+| Web map layout | **MapLibre GL** map (migrated from Leaflet), Pins/Density toggle top-right, priority legend bottom-left; Positron **water tinted blue** | Step 7 + P7 |
 
 ---
 
@@ -150,11 +150,13 @@ Live-fetcher rules for `bulletins/active`: `signals` are kept (admin-entered) un
 
 ## 7. Open items (decide inside the relevant step)
 
-- Exact rain thresholds in mm (current: ≥150 heavy, ≥50 moderate, else light)
+- Rain thresholds are kept at the 7-day totals light < 50 mm, moderate 50–149, heavy ≥ 150 (`rain_geo.js` and `kRainLevels` must stay in sync); revisit only if the map looks all-heavy or all-light in real use
 - Safety Tips wording per signal level
 - Whether the camera should re-fit when the alert card is expanded after a fit (not implemented)
 - Details sheet (step 5) can also show movement and size: `specifications.json` has `course` (Japanese compass text), `speed`, and `scale`; not stored yet
 - Confirm the service account can write Firestore (role "Cloud Datastore User"); the seeders note the Admin SDK key was IAM-denied
+- The provinces GeoJSON has 87 features but 84 names: Metro Manila is four district features with one name. The rain fetch uses one point for all four, and the map colours all four from it
+- Rain demo data comes from `seed_demo.js` (per province, heaviest along the simulation storm); the live data comes from `fetch_rain.js` (84 locations, 3 Open-Meteo requests per run)
 - Run `node seed_storm_sim.js --migrate` once the step 2b app build is installed (it resets the old demo in `bulletins/active`)
 - `AppConfig.demoMode` still serves the old bundled Ondoy (`demo_data.dart`, full 2009 path); not updated because demo mode is off
 - The app caches the bulletin for 10 minutes: after flipping `bulletins/simulation`, restart the app (or wait) to see the change

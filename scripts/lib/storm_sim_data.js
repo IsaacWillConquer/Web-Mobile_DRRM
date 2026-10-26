@@ -63,6 +63,9 @@ function buildSimulationBulletin(now = new Date(), { overrideLive = false } = {}
   // area exists - there is no storm-force (50 kt) area, as for a real TS.
   const galeArea = { lat: here.lat, lng: here.lng, radiusKm: 220 };
 
+  // Positions are valid on the hour, so map captions read "Sun 2PM", not "Sun 1:41PM".
+  const base = new Date(Math.floor(now.getTime() / HOUR_MS) * HOUR_MS);
+
   return {
     typhoonName: "Ondoy",
     internationalName: "Ketsana",
@@ -73,11 +76,11 @@ function buildSimulationBulletin(now = new Date(), { overrideLive = false } = {}
     maxWindsKph: here.windKph,
     gustKph: 115,
     pressureHpa: 985,
-    analysisAt: now.toISOString(),
+    analysisAt: base.toISOString(),
     track: TRACK,
     forecast: FORECAST.map((p) => ({
       ...p,
-      validAt: new Date(now.getTime() + p.hours * HOUR_MS).toISOString(),
+      validAt: new Date(base.getTime() + p.hours * HOUR_MS).toISOString(),
     })),
     cone: JSON.stringify(cone),
     galeArea,

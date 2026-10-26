@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 //
 // Seeds a DEMO snapshot of the rain forecast feed the mobile app renders:
-//   - forecasts/rain   (weekly rain per region)
+//   - forecasts/rain   (7-day rain per province)
 //
 // The demo STORM is no longer seeded here: it lives in its own doc and is
 // switched on/off with `node seed_storm_sim.js` (see that file), so it can
@@ -14,41 +14,40 @@
 //   node seed_demo.js            # write the demo rain data
 //   node seed_demo.js --clear    # delete forecasts/rain
 
+const fs = require("fs");
+const path = require("path");
 const { getAccessToken, setDoc, deleteDoc, nowTs } = require("./lib/firebase_rest");
+const { provincePoints, demoProvinceRain } = require("./lib/rain_geo");
+const { buildSimulationBulletin } = require("./lib/storm_sim_data");
 
 const PROJECT = process.env.FIREBASE_PROJECT_ID || "drrm-app";
 const clear = process.argv.includes("--clear");
 
-const RAIN = [
-  { name: "NCR", level: 3, mm: 455 },
-  { name: "Calabarzon", level: 3, mm: 332 },
-  { name: "Central Luzon", level: 2, mm: 120 },
-  { name: "Bicol Region", level: 2, mm: 95 },
-  { name: "Ilocos Region", level: 1, mm: 40 },
-  { name: "Cagayan Valley", level: 1, mm: 45 },
-  { name: "CAR", level: 1, mm: 60 },
-  { name: "Mimaropa", level: 1, mm: 55 },
-  { name: "Western Visayas", level: 1, mm: 35 },
-  { name: "Central Visayas", level: 1, mm: 30 },
-  { name: "Eastern Visayas", level: 1, mm: 38 },
-  { name: "Zamboanga Peninsula", level: 1, mm: 25 },
-  { name: "Northern Mindanao", level: 1, mm: 28 },
-  { name: "Davao Region", level: 1, mm: 22 },
-  { name: "Soccsksargen", level: 1, mm: 20 },
-  { name: "Caraga", level: 1, mm: 32 },
-  { name: "ARMM", level: 1, mm: 18 },
-];
+// Demo rain per province, heaviest along the simulation storm's path (same
+// path as `node seed_storm_sim.js`), so the two demo layers tell one story.
+function buildDemoRain() {
+  const geo = JSON.parse(
+    fs.readFileSync(
+      path.join(__dirname, "..", "mobile", "assets", "geo", "ph_provinces.geojson"),
+      "utf8"
+    )
+  );
+  const bulletin = buildSimulationBulletin();
+  const stormPath = [bulletin.track[bulletin.track.length - 1], ...bulletin.forecast];
+  return demoProvinceRain(provincePoints(geo), stormPath);
+}
 
 async function writeDemo(token) {
+  const provinces = buildDemoRain();
   await setDoc(token, PROJECT, "forecasts", "rain", {
     source: "Open-Meteo",
     sourceUrl: "https://open-meteo.com/",
     postedAt: nowTs(),
     windowDays: 7,
-    regions: RAIN,
+    provinces,
     demo: true,
   });
-  console.log(`Wrote forecasts/rain for ${RAIN.length} regions (demo).`);
+  console.log(`Wrote forecasts/rain for ${provinces.length} provinces (demo).`);
   console.log("Tip: run `node seed_storm_sim.js` to switch the simulation storm on.");
 }
 

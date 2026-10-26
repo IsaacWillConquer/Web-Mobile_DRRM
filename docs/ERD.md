@@ -118,9 +118,13 @@ array<uid>, `createdAt` / `updatedAt`.
 `cancelled`), `backup` (bool, true for an added backup team), `dispatchedBy` (uid),
 `updatedBy` (uid), `notes`, `createdAt` / `updatedAt`. Rejecting/duplicating a report sets its
 open assignments to `cancelled`.
+Rescue-flow fields (written by the rescue team's phone): `responderLocation` map
+`{lat, lng, updatedAt}` (overwritten ~every 10 s while `in_progress`), `startedAt` (Start Tracking),
+`completedAt` (finish).
 
 ### 2.6 `rescueRecords/{id}` — outcome records (1 per completed assignment)
-`assignmentId`, `reportId`?, `teamId`?, `peopleRescued` (number), `notes` (outcome narrative),
+`assignmentId`, `reportId`?, `teamId`?, `peopleRescued` (number), `notes` (outcome narrative /
+description), `imageUrls` array<string>? (Cloudinary `secure_url`s, ≤5, mobile finish form),
 `recordedBy` (uid), `createdAt` / `updatedAt`.
 
 ### 2.7 `clusters/{id}`
@@ -130,10 +134,15 @@ open assignments to `cancelled`.
 grid); persisted clusters are created by dispatch on cluster assignment.
 
 ### 2.8 `notifications/{id}` — per-user fan-out
-`userId`, `title`, `body`, `read` (bool), `readAt` (timestamp), `reportId`?, `type`? (only
-`'new_report'`), `createdAt`.
-Two producer shapes:
+`userId`, `title`, `body`, `read` (bool), `readAt` (timestamp), `reportId`?, `assignmentId`?,
+`type`? (`'new_report'` \| `'rescue_assigned'`), `createdAt`.
+Three producer shapes:
 - **Staff → reporter** (web): verify / reject / priority / assign / rescue-in-progress / completed.
+- **Responder (web) → team members**: `type:'rescue_assigned'` + `assignmentId` for every uid in
+  `teams.memberUids` when the rescue is confirmed; the mobile rescue app listens for unread ones
+  (`userId == me && type == 'rescue_assigned'`, filtered client-side — no composite index needed)
+  and shows the Start Tracking popup.
+- **Rescue team (mobile) → reporter**: "Rescue team en route" on Start Tracking, "Rescue completed" on finish.
 - **Resident → dispatchers** (mobile, on report submit): fixed-shape `type:'new_report'` ping to
   every uid in `config/dispatch.dispatcherUids`. Rules lock this shape exactly (keys, `read:false`,
   target must be dispatcher/admin, reporter must own the report).

@@ -7,15 +7,16 @@ import 'core/auth_service.dart';
 import 'firebase_options.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
+import 'screens/rescue_team_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const DrrmApp());
+  runApp(const KapitApp());
 }
 
-class DrrmApp extends StatelessWidget {
-  const DrrmApp({super.key});
+class KapitApp extends StatelessWidget {
+  const KapitApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +41,25 @@ class AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return snapshot.data == null ? const LoginScreen() : const HomeShell();
+        final user = snapshot.data;
+        if (user == null) return const LoginScreen();
+
+        // Rescue team members get the responder app; everyone else the resident app.
+        return StreamBuilder<AppUserProfile?>(
+          stream: AuthService.instance.watchProfile(user.uid),
+          builder: (context, profileSnap) {
+            if (profileSnap.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final profile = profileSnap.data;
+            if (profile?.role == 'rescueTeam') {
+              return RescueTeamShell(profile: profile!);
+            }
+            return const HomeShell();
+          },
+        );
       },
     );
   }

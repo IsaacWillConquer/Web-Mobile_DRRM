@@ -19,6 +19,7 @@ import '../models/map_overlay.dart';
 import '../models/rain_forecast.dart';
 import '../models/typhoon.dart';
 import '../widgets/map_layers_sheet.dart';
+import '../widgets/map_legend.dart';
 import '../widgets/overlay_pill.dart';
 import '../widgets/typhoon_alert_card.dart';
 
@@ -133,10 +134,10 @@ class _MapTabState extends State<MapTab> {
           );
         }
       case MapOverlay.rainForecast:
-        final regions = _regions;
-        if (regions != null && _rain != null) {
+        final areas = _rainAreas;
+        if (areas != null && _rain != null) {
           await renderer.showRainForecast(
-            buildRainForecast(regions, _rain!.regions),
+            buildRainForecast(areas, _rain!.regions),
           );
         }
       case MapOverlay.typhoons:
@@ -191,10 +192,10 @@ class _MapTabState extends State<MapTab> {
         if (provinces == null || typhoon == null) return null;
         return boundsForGeoJson(buildStormSignals(provinces, typhoon.signals));
       case MapOverlay.rainForecast:
-        final regions = _regions;
+        final areas = _rainAreas;
         final rain = _rain;
-        if (regions == null || rain == null) return null;
-        return boundsForGeoJson(buildRainForecast(regions, rain.regions));
+        if (areas == null || rain == null) return null;
+        return boundsForGeoJson(buildRainForecast(areas, rain.regions));
       case MapOverlay.none:
         return null;
     }
@@ -337,8 +338,49 @@ class _MapTabState extends State<MapTab> {
         MapOverlay.none => null,
       };
 
+  /// The shapes the rain forecast was made for: provinces for new documents,
+  /// regions for old ones.
+  Map<String, dynamic>? get _rainAreas =>
+      (_rain?.byProvince ?? false) ? _provinces : _regions;
+
+  /// Legend for the active layer, or null when there is nothing to explain.
+  /// Signals only list the levels that appear in the data.
+  ({String title, List<LegendItem> items})? get _legend {
+    switch (_active) {
+      case MapOverlay.stormSignals:
+        final present = {
+          for (final s in _typhoon?.signals ?? const <StormSignal>[]) s.level,
+        };
+        final items = [
+          for (final style in kSignalLevels)
+            if (present.contains(style.level))
+              LegendItem(
+                color: colorFromHex(style.colorHex),
+                label: 'No. ${style.level} · ${style.winds}',
+              ),
+        ];
+        return items.isEmpty ? null : (title: 'Wind signal', items: items);
+      case MapOverlay.rainForecast:
+        if (_rain == null || _rain!.regions.isEmpty) return null;
+        return (
+          title: 'Rain · next 7 days',
+          items: [
+            for (final style in kRainLevels)
+              LegendItem(
+                color: colorFromHex(style.colorHex),
+                label: style.label,
+              ),
+          ],
+        );
+      case MapOverlay.typhoons:
+      case MapOverlay.none:
+        return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final legend = _legend;
     return Stack(
       key: _stackKey,
       children: [
@@ -396,6 +438,12 @@ class _MapTabState extends State<MapTab> {
             left: 16,
             bottom: 24,
             child: OverlayPill(label: _overlayLabel!, onTap: _openLayers),
+          ),
+        if (legend != null)
+          Positioned(
+            left: 16,
+            bottom: 88,
+            child: MapLegend(title: legend.title, items: legend.items),
           ),
         Positioned(
           right: 16,

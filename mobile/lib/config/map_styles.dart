@@ -47,9 +47,14 @@ class MapStyles {
     'highway_shield',
   };
 
-  /// Fetches the Positron style and removes street/POI/building labels so the
-  /// basemap shows place names only. Falls back to the plain style URL on any
-  /// network/parse error, so the map always loads.
+  /// Tint the Positron water layers so oceans/lakes/rivers read as water while
+  /// the land stays calm grey. Must match the web (mapStyle.js).
+  static const String _waterColor = '#B9D4EA';
+  static const String _waterwayColor = '#9CC0DC';
+
+  /// Fetches the Positron style, removes street/POI/building labels so the
+  /// basemap shows place names only, and tints the water blue. Falls back to the
+  /// plain style URL on any network/parse error, so the map always loads.
   static Future<String> resolveDefaultStyle() async {
     final url = defaultStyle.url;
     try {
@@ -64,10 +69,24 @@ class MapStyles {
         if (layer['type'] != 'symbol') return true;
         final sourceLayer = (layer['source-layer'] ?? '').toString();
         return !_droppedLabelLayers.contains(sourceLayer);
-      }).toList();
+      }).map(_recolorWater).toList();
       return jsonEncode(style);
     } catch (_) {
       return url;
     }
+  }
+
+  /// Recolors the water (fill) and waterway (line) layers in place.
+  static dynamic _recolorWater(dynamic layer) {
+    if (layer is! Map) return layer;
+    final sourceLayer = (layer['source-layer'] ?? '').toString();
+    final paint = (layer['paint'] as Map?)?.cast<String, dynamic>();
+    if (paint == null) return layer;
+    if (layer['type'] == 'fill' && sourceLayer == 'water') {
+      paint['fill-color'] = _waterColor;
+    } else if (layer['type'] == 'line' && sourceLayer == 'waterway') {
+      paint['line-color'] = _waterwayColor;
+    }
+    return layer;
   }
 }

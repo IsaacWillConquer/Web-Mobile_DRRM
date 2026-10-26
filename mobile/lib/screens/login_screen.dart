@@ -5,6 +5,7 @@ import '../config/app_config.dart';
 import '../core/auth_service.dart';
 import '../core/phone.dart';
 import 'register_screen.dart';
+import 'terms_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   String? _error;
   bool _busy = false;
+  bool _emailLogin = false;
 
   @override
   void dispose() {
@@ -28,9 +30,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
-    if (normalizePhone(_phone.text) == null) {
-      setState(() => _error = 'Enter a valid 10-digit mobile number (9XXXXXXXXX).');
-      return;
+    final input = _phone.text.trim();
+    if (_emailLogin) {
+      if (!input.contains('@') || input.length < 5) {
+        setState(() => _error = 'Enter a valid responder email address.');
+        return;
+      }
+    } else {
+      if (normalizePhone(input) == null) {
+        setState(() => _error = 'Enter a valid 10-digit mobile number (9XXXXXXXXX).');
+        return;
+      }
     }
     if (_password.text.isEmpty) {
       setState(() => _error = 'Enter your password.');
@@ -43,7 +53,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     try {
       await AuthService.instance.login(
-        phone: _phone.text,
+        phone: input,
         password: _password.text,
       );
     } catch (err) {
@@ -86,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 32),
-                      _Brand(accent: accent),
+                      const _Brand(),
                       const SizedBox(height: 32),
                       _formCard(accent),
                       const Spacer(),
@@ -116,6 +126,25 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                         child: const Text('No account? Create one'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const TermsScreen(),
+                          ),
+                        ),
+                        child: const Text(
+                          'Terms of Use & Privacy',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${AppConfig.developerCredit} · ${AppConfig.creditsLine}',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.black38,
+                            ),
                       ),
                     ],
                   ),
@@ -153,46 +182,74 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Sign in with your mobile number.',
+            _emailLogin ? 'Sign in with responder or staff email.' : 'Sign in with your mobile number.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Colors.black54,
                 ),
           ),
           const SizedBox(height: 20),
-          TextField(
-            controller: _phone,
-            keyboardType: TextInputType.phone,
-            autofillHints: const [AutofillHints.telephoneNumber],
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(kPhoneDigits),
-            ],
-            decoration: InputDecoration(
-              labelText: 'Mobile number',
-              hintText: '9171234567',
-              prefixIcon: const Padding(
-                padding: EdgeInsets.only(left: 14, right: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('🇵🇭'),
-                    SizedBox(width: 6),
-                    Text('+63', style: TextStyle(fontWeight: FontWeight.w600)),
-                  ],
-                ),
+          if (_emailLogin)
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              decoration: const InputDecoration(
+                labelText: 'Responder / Staff email',
+                hintText: 'e.g. malolos.rescue@drrm.test',
+                prefixIcon: Icon(Icons.email_outlined),
               ),
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 0, minHeight: 0),
+            )
+          else
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              autofillHints: const [AutofillHints.telephoneNumber],
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(kPhoneDigits),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Mobile number',
+                hintText: '9171234567',
+                prefixIcon: const Padding(
+                  padding: EdgeInsets.only(left: 14, right: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('🇵🇭'),
+                      SizedBox(width: 6),
+                      Text('+63', style: TextStyle(fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+                prefixIconConstraints:
+                    const BoxConstraints(minWidth: 0, minHeight: 0),
+              ),
             ),
-          ),
           const SizedBox(height: 16),
           TextField(
             controller: _password,
             obscureText: true,
             decoration: const InputDecoration(labelText: 'Password'),
           ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => setState(() {
+                _emailLogin = !_emailLogin;
+                _error = null;
+              }),
+              child: Text(
+                _emailLogin
+                    ? 'Resident? Sign in with mobile number'
+                    : 'Rescue Team? Sign in with email',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ),
           if (_error != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             Text(
               _error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
@@ -205,39 +262,38 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 class _Brand extends StatelessWidget {
-  const _Brand({required this.accent});
-
-  final Color accent;
+  const _Brand();
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: accent.withValues(alpha: 0.12),
-          ),
-          child: Icon(Icons.cyclone, color: accent, size: 34),
+        Image.asset(
+          AppConfig.logoAsset,
+          height: 96,
+          fit: BoxFit.contain,
+          semanticLabel: AppConfig.appName,
         ),
-        const SizedBox(height: 16),
-        Text(
-          AppConfig.appName,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-        ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 12),
         Text(
           AppConfig.appTagline,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Colors.black54,
               ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Text(
+            AppConfig.appDescription,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.black45,
+                  height: 1.4,
+                ),
+          ),
         ),
       ],
     );

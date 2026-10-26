@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 import '../config/app_config.dart';
+import '../config/map_styles.dart';
 import '../core/cloudinary_service.dart';
 import '../core/location.dart';
 import '../core/report_service.dart';
@@ -32,6 +33,16 @@ class _ReportScreenState extends State<ReportScreen> {
   MapLibreMapController? _mapController;
   Circle? _pin;
   bool _styleLoaded = false;
+  String? _styleString;
+
+  @override
+  void initState() {
+    super.initState();
+    // Same Positron style as the other maps: place-only labels + blue water.
+    MapStyles.resolveDefaultStyle().then((s) {
+      if (mounted) setState(() => _styleString = s);
+    });
+  }
 
   String _disasterType = AppConfig.disasterTypes.first;
   String _onBehalfOf = 'self';
@@ -216,7 +227,8 @@ class _ReportScreenState extends State<ReportScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: MapLibreMap(
-                  styleString: AppConfig.mapStyleUrl,
+                  key: ValueKey(_styleString ?? AppConfig.mapStyleUrl),
+                  styleString: _styleString ?? AppConfig.mapStyleUrl,
                   initialCameraPosition: const CameraPosition(
                     target: _defaultCenter,
                     zoom: 13,
@@ -224,6 +236,8 @@ class _ReportScreenState extends State<ReportScreen> {
                   onMapCreated: (controller) => _mapController = controller,
                   onStyleLoadedCallback: () {
                     _styleLoaded = true;
+                    // Fresh platform view: any earlier pin is gone.
+                    _pin = null;
                     _syncPin();
                   },
                   onMapClick: (point, latlng) {

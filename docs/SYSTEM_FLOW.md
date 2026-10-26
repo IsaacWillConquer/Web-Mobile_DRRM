@@ -13,11 +13,12 @@ surface, what data is written, and how the incident moves from report to rescue 
 
 | Surface | Built with | Actors |
 |---|---|---|
-| Resident app | Flutter (`mobile/`) | **Resident / reporter** |
+| Mobile app | Flutter (`mobile/`) | **Resident / reporter** and **Rescue team (field app)** |
 | Staff portal | React + Vite + Tailwind (`web/`) | **Dispatcher**, **Rescue team**, **DMO**, **Admin** |
 | Backend | Firebase **Auth + Firestore** (security rules = the backend) | — |
 | Media | Cloudinary (unsigned upload) | resident photos |
 | Feeds | JMA / GDACS (typhoon), Open-Meteo (rain), PAGASA bulletins | read-only |
+| Routing | OpenRouteService directions API (`driving-car`) | rescue team mobile (road route + ETA) |
 | Maps | MapLibre GL + OpenStreetMap / MapTiler | — |
 
 There is **no application server**. All logic runs client-side; integrity, role checks and PII
@@ -48,7 +49,7 @@ realtime listeners replacing polling on every screen.
 |---|---|---|
 | `resident` | mobile | register, submit reports + PII contact, track own reports, receive notifications |
 | `dispatcher` | web | read all reports/clusters/teams/assignments, verify / reject / duplicate, assign teams (single, backup, cluster), close incidents |
-| `rescueTeam` | web | read assignments, accept / decline / start / complete, read PII **only while `users.teamId == reports.teamId`** (or backup) |
+| `rescueTeam` | web + mobile | **web:** review map, confirm / decline, follow team live · **mobile:** receive popup, Start Tracking, GPS route, hold-to-confirm finish · read PII **only while `users.teamId == reports.teamId`** (or backup) |
 | `dmo` | web | analytics + reports/export, read the audit log |
 | `admin` | web | superuser + account management (Staff/Users) + writes `config/dispatch` |
 
@@ -66,10 +67,10 @@ residents are blocked at login (`web/src/pages/Login.jsx`).
 | `reports/{id}` | `reporterId`, `disasterType`, `lat/lng`, `geohash`, `imageUrls[]`, `status`, `priority`, `teamId`, `backupTeamIds[]`, `clusterId`, `verifiedBy`, `rejectionReason`, `history[]` | resident create; staff/responders update |
 | `reportContacts/{reportId}` | victim name/contact, relationship, special needs, notes (**PII**) | resident; staff |
 | `teams/{id}` | `name`, `contact`, `status`, `memberUids[]` | dispatch |
-| `assignments/{id}` | `reportId`\|`clusterId`, `teamId`, `status`, `backup`, `dispatchedBy` | dispatch; rescue team (status) |
-| `rescueRecords/{id}` | `assignmentId`, `peopleRescued`, `notes`, `recordedBy` | rescue team |
+| `assignments/{id}` | `reportId`\|`clusterId`, `teamId`, `status`, `backup`, `dispatchedBy`, `responderLocation{}`, `startedAt`, `completedAt` | dispatch; rescue team (status, live location) |
+| `rescueRecords/{id}` | `assignmentId`, `peopleRescued`, `notes`, `imageUrls[]`, `recordedBy` | rescue team (mobile or web) |
 | `clusters/{id}` | `center`, `cell`, `reportIds[]`, `priority`, `status` | dispatch |
-| `notifications/{id}` | `userId`, `title`, `body`, `read`, `type`, `reportId` | staff (to reporter); resident ping (to dispatchers) |
+| `notifications/{id}` | `userId`, `title`, `body`, `read`, `type` (`new_report` \| `rescue_assigned`), `assignmentId`, `reportId` | staff (to reporter / team members); resident ping (to dispatchers); rescue team (to reporter) |
 | `logs/{id}` | `uid`, `action`, `details` (append-only) | any signed-in user |
 | `config/dispatch` | `dispatcherUids[]` | admin |
 | `bulletins/*`, `forecasts/rain` | feed payloads | Admin SDK scripts only |
@@ -92,8 +93,8 @@ Terminal (never rescued further): Rejected, Duplicate, Cancelled
 | → `Rejected` (+`rejectionReason`) | dispatcher/admin |
 | → `Duplicate` | dispatcher/admin |
 | → `Team Assigned` | dispatcher/admin on assignment |
-| → `Rescue in Progress` | rescue team (start) |
-| → `Resolved` | rescue team (complete → writes `rescueRecords`) |
+| → `Rescue in Progress` | rescue team (**Start Tracking** on mobile, or "Start without app" on web) |
+| → `Resolved` | rescue team (**hold-to-confirm** on mobile / complete on web → writes `rescueRecords`; only when no other team is still active) |
 | → `Closed` | dispatcher/admin (from `Resolved` only) |
 
 Transitions are validated server-side by rules (`validStatus`) and restricted by role.
@@ -108,7 +109,8 @@ sequenceDiagram
   participant Res as Resident (mobile)
   participant FS as Firestore (rules)
   participant Dis as Dispatcher (web)
-  participant Team as Rescue team (web)
+  participant Web as Responder (web)
+  participant Team as Rescue team (mobile)
 
   Dis->>FS: sign in (email/pw) — role checked against WEB_ROLES
   Res->>FS: register (phone → synthetic email) — users/{uid} role=resident
@@ -118,9 +120,12 @@ sequenceDiagram
   Dis->>FS: Verify (verifiedBy) / Reject(reason) / Mark duplicate / set priority
   Dis->>FS: assign team → assignments{dispatched} + reports.teamId + status "Team Assigned"
   Dis->>FS: (optional) add backup team → reports.backupTeamIds[] + backup assignment
-  FS-->>Team: assignment appears in responder queue
-  Team->>FS: accept → in_progress (report → "Rescue in Progress"; PII unlocks)
-  Team->>FS: complete → rescueRecords{peopleRescued} + report → "Resolved"
+  FS-->>Web: assignment appears in responder queue (card → map pin)
+  Web->>FS: Confirm rescue → assignment "accepted" + notifications{rescue_assigned} per teams.memberUids
+  FS-->>Team: popup "Rescue assigned" (Firestore listener) → Start Tracking
+  Team->>FS: assignment "in_progress", report → "Rescue in Progress"; PII unlocks
+  Team->>FS: responderLocation every ~10 s (GPS) → web map shows live dot
+  Team->>FS: hold-to-confirm → rescueRecords{people, notes, imageUrls} + "completed" + report → "Resolved"
   Dis->>FS: close incident → "Closed"
   FS-->>Res: notifications on verify/reject/assign/progress/resolved
 ```
@@ -141,11 +146,18 @@ sequenceDiagram
 5. **Assignment** — to a single report, an additional **backup** team, or a suggested **cluster**
    → `assignments` doc(s), `reports.teamId` / `backupTeamIds`, status `Team Assigned`, team
    status `assigned`, reporter notified.
-6. **Response** — rescue team: `dispatched → accepted → in_progress → completed`. Start sets
-   `Rescue in Progress` and unlocks PII for the assigned team(s); complete writes
-   `rescueRecords` and sets `Resolved`.
-7. **Close & monitor** — dispatcher closes `Resolved → Closed`; DMO builds analytics + CSV/PDF;
-   admin reviews the append-only audit trail.
+6. **Response** — `dispatched → accepted → in_progress → completed`:
+   1. **Web responder** clicks the assignment card → map shows the destination pin → **Confirm rescue**
+      (`accepted`) → a `rescue_assigned` notification is written for every uid in `teams.memberUids`.
+   2. **Rescue team phone** (role `rescueTeam`, `users.teamId` set) shows the popup → **Start Tracking**:
+      assignment `in_progress`, report `Rescue in Progress` (PII unlocks), reporter notified, GPS stream
+      starts, **OpenRouteService** draws the road route + distance/ETA (straight line if unavailable).
+   3. Position is written to `assignments.responderLocation` (~10 s); the web map shows the live dot.
+   4. On site, the team **holds Confirm Rescue (1.5 s)** → form: people saved, description, up to 5 photos
+      (Cloudinary) → `rescueRecords`, assignment `completed`, report `Resolved` once no other team is still active.
+7. **Close & monitor** — dispatcher closes `Resolved → Closed`; DMO reviews analytics (At-a-glance
+   → metric groups + priority split → patterns → **hotspot map** → records) with CSV/PDF; admin
+   reviews the append-only audit trail.
 
 ---
 
@@ -161,7 +173,8 @@ Priority is **derived from submission time**, not from a manual severity value
   in the web UI (the stored `priority` field remains for schema/mobile compatibility).
 - **Terminal** reports (`Resolved, Closed, Rejected, Duplicate, Cancelled`) are excluded from the
   map and from the default **Active** list, and their actions are disabled.
-- Clusters and the DMO "open reports by waiting time" chart use the same age buckets.
+- The waiting-time buckets drive the **dispatch** map/list colours only; the **DMO** analytics
+  breaks incidents down by **status / priority / type / area** (there is no waiting-time chart).
 
 ---
 
@@ -181,12 +194,13 @@ Priority is **derived from submission time**, not from a manual severity value
 | 20:05 | Nyle | **Verifies R1** → `Verified` + `verifiedBy`, notifies Maria; **marks R2 Duplicate** → R2 leaves map/list | FR-05, FR-14, FR-15 |
 | 20:07 | Nyle | Assigns **Alpha** to R1 → `assignments/A1 {dispatched}`, `reports/R1.teamId`, status `Team Assigned`, `teams/Alpha.status="assigned"` | FR-07 |
 | 20:10 | Nyle | Adds **backup Bravo** → `assignments/A2 {backup:true}`, `reports/R1.backupTeamIds=["Bravo"]`; rules grant Bravo PII access too | FR-07, §8 |
-| 20:15 | Alpha | Accepts A1 → `accepted`; **Start** → `in_progress`, R1 → `Rescue in Progress`, PII (`reportContacts/R1`) unlocked | FR-08, FR-11 |
+| 20:15 | Alpha (web) | Clicks card → map pin → **Confirm rescue** → A1 `accepted`; `rescue_assigned` notification to each Alpha member | FR-08, FR-09 |
+| 20:16 | Alpha (mobile) | Popup → **Start Tracking** → A1 `in_progress`, R1 → `Rescue in Progress`, PII (`reportContacts/R1`) unlocked, GPS + road route live | FR-08, FR-11 |
 | 20:35 | Bravo | Declines A2 → `declined` (removed from active responder queue) | FR-07 |
-| 21:00 | Alpha | **Complete** → `rescueRecords/RR1 {peopleRescued:4}`, A1 → `completed`, R1 → `Resolved`, notifies Maria | FR-11 |
+| 21:00 | Alpha (mobile) | **Hold to confirm** → form (4 saved, notes, 2 photos) → `rescueRecords/RR1 {peopleRescued:4, imageUrls}`, A1 → `completed`, R1 → `Resolved`, notifies Maria | FR-11 |
 | 21:05 | Nyle | **Close incident** → R1 → `Closed`; leaves the active queue/map | FR-05 |
-| 21:10 | DMO | Analytics: open-by-waiting-time donut, avg time-to-verify/resolve, rescued count; CSV/PDF export | FR-12 |
-| — | Admin | **Activity** shows the append-only chain: `auth_login`, `staff_created`, `report_verify`, `report_duplicate`, `report_assign`, `report_assign_backup`, `assignment_accept`, `assignment_start`, `assignment_decline`, `assignment_complete`, `report_close` | FR-13 |
+| 21:10 | DMO | Analytics: At-a-glance hero stats, metric groups + priority split, breakdown toggle (status/priority/type/area), **hotspot map**, records; CSV/PDF export | FR-12 |
+| — | Admin | **Activity** shows the append-only chain: `auth_login`, `staff_created`, `report_verify`, `report_duplicate`, `report_assign`, `report_assign_backup`, `assignment_accept`, `assignment_start` (web only), `assignment_decline`, `assignment_complete` (web only), `report_close` | FR-13 |
 
 ---
 
@@ -217,6 +231,9 @@ These appear in the README/manual roadmap but are **not yet in the code**:
 | FCM push notifications | **Not implemented** — notifications are Firestore-only + in-app (web bell/toast, mobile screen) |
 | Report markers / clustering on the mobile map | **Not implemented** — the mobile map renders hazard/weather overlays only |
 | 4 mobile tabs | Actually **2 tabs** (Map, Profile) + center Report FAB + top-right notification bell |
+| Rescue popup when the app is closed | **Not implemented** — the `rescue_assigned` popup is an in-app Firestore listener (needs the app open); FCM is future work |
+| Rescue tracking with screen locked | **Not implemented** — GPS is foreground-only (no Android foreground service) |
+| Mobile rescue actions in the audit log | **Not logged** — mobile start/finish writes data but not `logs` entries (web actions are logged) |
 
 Fully implemented: the web flow (dispatch / responder / DMO / admin), Firestore rules, seeds,
 feeds, and the time-based priority, backup-team and terminal-report handling described above.
@@ -227,14 +244,19 @@ feeds, and the time-based priority, backup-team and terminal-report handling des
 
 | Concern | Path |
 |---|---|
-| Resident auth / report submit | `mobile/lib/core/auth_service.dart`, `core/report_service.dart` |
+| Mobile auth (resident phone, staff email) / report submit | `mobile/lib/core/auth_service.dart`, `core/report_service.dart` |
 | Resident screens | `mobile/lib/screens/` (login, register, home_shell, report, map_tab, notifications, profile) |
 | Web auth + guards | `web/src/core/auth/*`, `web/src/core/guards/ProtectedRoute.jsx` |
 | Dispatch (triage/assign/priority) | `web/src/pages/dispatch/DispatchPage.jsx`, `ReportMap.jsx`, `constants.js` |
-| Responder | `web/src/pages/responder/ResponderPage.jsx` |
-| DMO analytics | `web/src/pages/dmo/DmoPage.jsx` |
+| Responder (web) | `web/src/pages/responder/ResponderPage.jsx`, `ResponderMap.jsx` |
+| Rescue team (mobile) | `mobile/lib/screens/rescue_team_shell.dart`, `core/rescue_service.dart`, `core/routing_service.dart`, `models/assignment.dart` |
+| DMO analytics + **hotspot map** | `web/src/pages/dmo/DmoPage.jsx`, `web/src/pages/dmo/IncidentMap.jsx` |
+| Basemap style / water tint (web) | `web/src/pages/dispatch/mapStyle.js` (`recolorWater`) |
+| Terms of Use page (web) | `web/src/pages/Terms.jsx`, `web/src/config/appConfig.js` |
+| Mobile Terms screen | `mobile/lib/screens/terms_screen.dart`, `mobile/lib/config/app_config.dart` |
 | Admin (staff/users/activity) | `web/src/pages/admin/*` |
 | Firestore access (services) | `web/src/core/services/*` |
 | Security rules | `firestore/firestore.rules` |
 | Feeds | `scripts/fetch_typhoon.js`, `scripts/fetch_rain.js` |
+| Keys (gitignored) | `mobile/lib/config/map_config.dart` (`mapTilerKey`, `orsKey`) |
 | Rules tests | `scripts/rules-test/` |

@@ -9,8 +9,9 @@ honest answers to likely questions.
 
 A serverless disaster reporting & monitoring system: **residents** (Flutter) report floods,
 fires, etc. with GPS/pin location and up to 3 photos; **dispatchers** (React web) verify,
-prioritize, spot duplicates, and assign rescue teams on a live map; **rescue teams** accept,
-execute and record outcomes; the **DMO** gets analytics with CSV/PDF export. Firebase
+prioritize, spot duplicates, and assign rescue teams on a live map; **rescue teams** (web confirm + mobile field app with live GPS route) accept,
+execute and record outcomes with photos; the **DMO** gets analytics with an incident **hotspot map**
+and CSV/PDF export. Firebase
 (Auth + Firestore + Hosting + Cloud Functions-free) is the whole backend; security is
 enforced in Firestore rules, not app code.
 
@@ -63,14 +64,24 @@ enforced in Firestore rules, not app code.
    `users/{uid}.teamId`; dispatch staff assign responders to teams in the **Teams** tab
    (which writes both `teams.memberUids` and the responder's `teamId`), so the manual console
    step is gone. A rescue team without `teamId` still cannot see contact PII even when assigned.
-6. **No file-type validation server-side for images** (Cloudinary unsigned upload); size/type
+6. **Rescue-team mobile flow is in-app and foreground-only.** The "Rescue assigned" popup is a
+   Firestore listener, so it only appears while the rescue app is open (same FCM gap as #2), and
+   live GPS tracking pauses if the screen locks (no Android foreground service yet). The web side is
+   unaffected. **Future work:** FCM push + foreground location service.
+6b. **Third-party routing dependency.** The road route + ETA come from OpenRouteService (free HeiGIT
+   token, gitignored in `map_config.dart`). If it is down or unconfigured the app falls back to a
+   straight line and everything else still works; OSRM is a keyless drop-in replacement.
+6c. **Mobile rescue actions aren't written to the audit log** (web actions are). Rescue records,
+   assignment status and notifications are still recorded in Firestore.
+7. **No file-type validation server-side for images** (Cloudinary unsigned upload); size/type
    checks are client-side (R3-lite).
-7. **Duplicate detection ignores description text** — it keys on type + location + time only.
-8. **Priority is time-only (deliberate FR-06 deviation).** FR-06 asks for prioritization "based on
+8. **Duplicate detection ignores description text** — it keys on type + location + time only.
+9. **Priority is time-only (deliberate FR-06 deviation).** FR-06 asks for prioritization "based on
    urgency and risk". We deliberately rank by **submission time** — the oldest active report is
    rescued first — which is transparent, severity-free and impossible to game. There is **no
-   manual `low/medium/high` input** in the UI; the stored `priority` field is legacy (mobile still
-   writes `medium`) and unused for ordering.
+   manual `low/medium/high` input** in the UI; the stored `priority` field is legacy for ordering
+   (mobile still writes `medium`). It is surfaced **read-only** in the DMO priority-split chart and
+   the CSV export, but never affects the rescue order.
 
 ## 5. Backup & disaster recovery (requirement §8)
 
@@ -93,15 +104,15 @@ enforced in Firestore rules, not app code.
 | FR-01 Auth | Firebase Auth; phone+password (mobile), email (web); `active` kill switch |
 | FR-02 Reporting | Mobile report flow (7 disaster types) |
 | FR-03 Location | GPS + manual pin (lat/lng stored) |
-| FR-04 Images | ≤3 Cloudinary photos per report (rules-enforced cap) |
+| FR-04 Images | ≤3 Cloudinary photos per report (rules-enforced cap); ≤5 photos per rescue record (mobile finish form) |
 | FR-05 Management | Dispatch verify / reject-with-reason / close |
 | FR-06 Prioritization | Time-based rescue queue (oldest active report = #1); map + queue ordering. *(Deviation: no urgency/severity input — see §4.8)* |
 | FR-07 Assignment | Single-report, **backup team**, and cluster assignment; team status flips |
 | FR-08 Status monitoring | `history[]` timeline (mobile) + status board (web) |
 | FR-09 Notifications | In-app fan-out both directions (rule-locked pings) |
-| FR-10 Mapping | Leaflet live map (web), MapLibre overlays (mobile) |
+| FR-10 Mapping | **MapLibre GL** on web (dispatch / responder / DMO hotspot map) **and** mobile (hazard overlays, report pin, rescue route) |
 | FR-11 Rescue records | `rescueRecords` on completion (people rescued + notes) |
-| FR-12 Reports/stats | DMO analytics + CSV/PDF export |
+| FR-12 Reports/stats | DMO analytics (At-a-glance → metric groups + priority split → patterns → **hotspot map** → records) + CSV/PDF export |
 | FR-13 Audit trail | Append-only `logs` + admin Activity page |
 | FR-14 Duplicate detection | Grid flags + "mark as duplicate" workflow |
 | FR-15 Verification | `verifiedBy` recorded; verified vs submitted filters |
@@ -116,7 +127,7 @@ enforced in Firestore rules, not app code.
 
 ## 8. If asked "what would you do next?"
 
-1. FCM push via a Cloud Function triggered on `notifications` create.
+1. FCM push via a Cloud Function triggered on `notifications` create (also makes the rescue popup work with the app closed) + Android foreground location service for background tracking.
 2. Offline-first queueing + outbound SMS fallback (P4b).
 3. Signed Cloudinary uploads / server-side media policy.
 4. Automated Firestore export schedule (backup runbook).

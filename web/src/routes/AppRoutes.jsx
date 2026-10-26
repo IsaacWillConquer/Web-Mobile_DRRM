@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import Login from "../pages/Login";
+import Terms from "../pages/Terms";
 import Dashboard from "../pages/Dashboard";
 import DispatchPage from "../pages/dispatch/DispatchPage";
 import ResponderPage from "../pages/responder/ResponderPage";
@@ -17,6 +18,7 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/terms" element={<Terms />} />
 
       <Route
         path="/dashboard"
