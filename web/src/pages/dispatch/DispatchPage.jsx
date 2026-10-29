@@ -691,6 +691,12 @@ function ReportDetail({
   );
   const [backupTeamId, setBackupTeamId] = useState("");
   const [contact, setContact] = useState(null);
+  const [viewerIndex, setViewerIndex] = useState(null);
+
+  // Close the photo viewer when another report is opened.
+  useEffect(() => {
+    setViewerIndex(null);
+  }, [report.id]);
 
   useEffect(() => {
     let active = true;
@@ -743,16 +749,31 @@ function ReportDetail({
       <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">{report.description}</p>
 
       {report.imageUrls?.length ? (
-        <div className="mt-3 flex gap-2">
-          {report.imageUrls.map((url) => (
-            <img
+        <div className="mt-3 flex flex-wrap gap-2">
+          {report.imageUrls.map((url, i) => (
+            <button
               key={url}
-              src={url}
-              alt="report"
-              className="h-20 w-20 rounded-lg object-cover ring-1 ring-slate-900/5"
-            />
+              type="button"
+              onClick={() => setViewerIndex(i)}
+              className="rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              aria-label={`View photo ${i + 1} of ${report.imageUrls.length}`}
+            >
+              <img
+                src={url}
+                alt="report"
+                className="h-20 w-20 cursor-zoom-in rounded-lg object-cover ring-1 ring-slate-900/5 transition hover:opacity-90"
+              />
+            </button>
           ))}
         </div>
+      ) : null}
+
+      {viewerIndex !== null && report.imageUrls?.length ? (
+        <PhotoViewer
+          urls={report.imageUrls}
+          startIndex={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+        />
       ) : null}
 
       {duplicateOf ? (
@@ -1108,6 +1129,91 @@ function HistoryTimeline({ history, userById }) {
         );
       })}
     </ol>
+  );
+}
+
+// Full-screen photo viewer: click the dark area, X, or press Esc to close.
+// Use the < > buttons or the left/right arrow keys to switch photos.
+function PhotoViewer({ urls, startIndex, onClose }) {
+  const [index, setIndex] = useState(startIndex);
+  const total = urls.length;
+
+  const goPrev = () => setIndex((i) => (i - 1 + total) % total);
+  const goNext = () => setIndex((i) => (i + 1) % total);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") setIndex((i) => (i - 1 + total) % total);
+      if (e.key === "ArrowRight") setIndex((i) => (i + 1) % total);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [total, onClose]);
+
+  const navButton =
+    "absolute top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-3 text-white backdrop-blur hover:bg-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white";
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/85 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Report photos"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 rounded-full bg-white/15 p-2 text-white backdrop-blur hover:bg-white/30"
+        aria-label="Close"
+      >
+        <Icon name="x" className="h-6 w-6" />
+      </button>
+
+      {total > 1 ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            goPrev();
+          }}
+          className={`${navButton} left-4`}
+          aria-label="Previous photo"
+        >
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+      ) : null}
+
+      <img
+        src={urls[index]}
+        alt={`Report photo ${index + 1} of ${total}`}
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+      />
+
+      {total > 1 ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            goNext();
+          }}
+          className={`${navButton} right-4`}
+          aria-label="Next photo"
+        >
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
+      ) : null}
+
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-white/15 px-3 py-1 text-sm font-medium text-white backdrop-blur">
+        {index + 1} / {total}
+      </div>
+    </div>
   );
 }
 

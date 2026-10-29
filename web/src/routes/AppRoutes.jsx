@@ -12,6 +12,13 @@ import ProtectedRoute from "../core/guards/ProtectedRoute";
 import { useAuth } from "../core/auth/authContext";
 import { ROLES } from "../config/appConfig";
 
+// Rescue teams only work in the Responder page, so send them straight there.
+function DashboardEntry() {
+  const { role } = useAuth();
+  if (role === ROLES.rescueTeam) return <Navigate to="/responder" replace />;
+  return <Dashboard />;
+}
+
 export default function AppRoutes() {
   const { user, loading } = useAuth();
 
@@ -24,7 +31,7 @@ export default function AppRoutes() {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <Dashboard />
+            <DashboardEntry />
           </ProtectedRoute>
         }
       />
@@ -32,7 +39,7 @@ export default function AppRoutes() {
       <Route
         path="/dispatch"
         element={
-          <ProtectedRoute roles={[ROLES.dispatcher, ROLES.dmo, ROLES.admin]}>
+          <ProtectedRoute roles={[ROLES.dispatcher, ROLES.admin]}>
             <DispatchPage />
           </ProtectedRoute>
         }

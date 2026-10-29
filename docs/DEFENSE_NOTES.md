@@ -20,8 +20,8 @@ enforced in Firestore rules, not app code.
 | Decision | Rationale (defense-ready) |
 |---|---|
 | **Firebase serverless, no API server** | Zero-ops, free tier fits a class project; realtime listeners replace polling; auth + rules + hosting in one platform. Matches the "no backend" constraint we locked. |
-| **Security in Firestore rules, not the client** | The client is untrusted: rules re-validate status enums, `imageUrls ≤ 3`, PII gating, and audit immutability server-side. We even **test the rules** with the emulator (`scripts/rules-test`, 50/50 passing). |
-| **Roles as a field + rules hierarchy** | `resident < dispatcher < rescueTeam < dmo < admin`; `active:false` is a global kill switch checked in rules and at login. Admin cannot demote/delete self (no lockout). |
+| **Security in Firestore rules, not the client** | The client is untrusted: rules re-validate status enums, `imageUrls ≤ 3`, PII gating, and audit immutability server-side. We even **test the rules** with the emulator (`scripts/rules-test`, 67/67 passing). |
+| **Roles as a field, no hierarchy** | Roles are flat capabilities (`resident`, `dispatcher`, `rescueTeam`, `dmo`, `admin` superuser); `active:false` is a global kill switch checked in rules and at login. Admin cannot demote/delete self (no lockout). **Rescue teams are scoped to their own team's work** — they can only read/update the reports and assignments their `users/{uid}.teamId` is on. |
 | **PII separation (`reportContacts/{reportId}`)** | Victim name/phone/needs are isolated from `reports` so we can gate them tightly (Data Privacy Act of 2012, §8 of requirements): staff always; **assigned rescue team only** (via `users.teamId == reports.teamId`); reporters see their own. |
 | **Audit log as append-only collection** | `logs` writes are rule-bound to `uid == auth.uid`, updates/deletes are denied (`allow update, delete: if false`). 18 action types incl. staff changes, verifications, assignments, closures — surfaced on the admin Activity page (FR-13). |
 | **Geohash/grid approximation over PostGIS** | No server means no PostGIS; duplicates (≈110 m cells, same type, 24 h) and density clusters (≈1 km cells) are client-side grid computations — documented as approximate, good enough for triage. |
@@ -33,7 +33,8 @@ enforced in Firestore rules, not app code.
 
 - Deny-all catch-all rule; every collection enumerated explicitly.
 - Report creation is resident-only, `status` forced to `Submitted`, priority enum-checked.
-- Responders can update **status only** (cannot touch `priority`, `verifiedBy`, `reporterId`).
+- Responders can update **status only** (cannot touch `priority`, `verifiedBy`, `reporterId`), and a
+  rescue team can only touch the reports/assignments **its own team is assigned to** (staff read all).
 - `reportContacts` (PII) is the tightest surface — assignment-gated for rescue teams.
 - PAGASA/JMA feeds (`bulletins`, `forecasts`) are read-only from clients; writes only via
   Admin SDK scripts (GitHub Actions cron).
@@ -119,8 +120,9 @@ enforced in Firestore rules, not app code.
 
 ## 7. Test evidence
 
-- `scripts/rules-test/` — Firestore emulator security suite, **53/53 passing** (roles, PII
-  gates, teamId scoping, ping shape, report field validation, log immutability).
+- `scripts/rules-test/` — Firestore emulator security suite, **67/67 passing** (roles, PII
+  gates, teamId scoping, **rescue-team report/assignment isolation**, ping shape, report field
+  validation, log immutability).
 - Web: `npm run lint` + `npm run build` green at last check.
 - Mobile: `flutter analyze` clean at last check; 12 province/signal resolver tests.
 - Deployed: rules + hosting live on project `drrm-app` (drrm-app.web.app).

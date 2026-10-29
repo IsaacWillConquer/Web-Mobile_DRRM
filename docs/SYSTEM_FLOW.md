@@ -48,14 +48,14 @@ realtime listeners replacing polling on every screen.
 | Role | Surface | Capabilities |
 |---|---|---|
 | `resident` | mobile | register, submit reports + PII contact, track own reports, receive notifications |
-| `dispatcher` | web | read all reports/clusters/teams/assignments, verify / reject / duplicate, assign teams (single, backup, cluster), close incidents |
-| `rescueTeam` | web + mobile | **web:** review map, confirm / decline, follow team live · **mobile:** receive popup, Start Tracking, GPS route, hold-to-confirm finish · read PII **only while `users.teamId == reports.teamId`** (or backup) |
-| `dmo` | web | analytics + reports/export, read the audit log |
+| `dispatcher` | web | read all reports/clusters/teams/assignments, verify / reject / duplicate, assign teams (single, backup, cluster), close incidents · Responder page is **view-only** (follow teams live) |
+| `rescueTeam` | web + mobile | **scoped to its own team's work** — reads/updates **only the assignments (and reports) its `users.teamId` is on** · **web:** review map, confirm / decline, follow team live · **mobile:** receive popup, Start Tracking, GPS route, hold-to-confirm finish · read PII only on its assigned reports |
+| `dmo` | web | analytics + reports/export, read the audit log · Responder page is **view-only** |
 | `admin` | web | superuser + account management (Staff/Users) + writes `config/dispatch` |
 
-Hierarchy `resident < dispatcher < rescueTeam < dmo`, with `admin` as superuser. `active:false`
-is a global kill switch (checked in rules and at web login). The web portal is **staff-only** —
-residents are blocked at login (`web/src/pages/Login.jsx`).
+Roles are **flat capabilities** (no hierarchy): `resident`, `dispatcher`, `rescueTeam`, `dmo`, with
+`admin` as superuser. `active:false` is a global kill switch (checked in rules and at web login).
+The web portal is **staff-only** — residents are blocked at login (`web/src/pages/Login.jsx`).
 
 ---
 
@@ -260,3 +260,4 @@ feeds, and the time-based priority, backup-team and terminal-report handling des
 | Feeds | `scripts/fetch_typhoon.js`, `scripts/fetch_rain.js` |
 | Keys (gitignored) | `mobile/lib/config/map_config.dart` (`mapTilerKey`, `orsKey`) |
 | Rules tests | `scripts/rules-test/` |
+ca

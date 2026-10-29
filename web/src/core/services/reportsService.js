@@ -26,6 +26,12 @@ export function watchReports({ status, reporterId } = {}, onData, onError) {
   );
 }
 
+// Live copy of one report. Rescue teams can only read reports their team is
+// assigned to, so they load reports one by one instead of listing them all.
+export function watchReport(id, onData, onError) {
+  return onSnapshot(reportDoc(id), onData, onError);
+}
+
 // Appends a status change to `history[]`, skipping the append when the report
 // is already in that status (guards against repeated verify/assign clicks
 // producing duplicate timeline entries). Uses a transaction so concurrent

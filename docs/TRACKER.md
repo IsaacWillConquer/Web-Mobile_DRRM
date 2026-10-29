@@ -46,7 +46,7 @@ IT 305 · Bulacan State University · **Submit: Nov 2, 2026**
 |---|---|
 | `resident` | submits reports, tracks status |
 | `dispatcher` | verifies, prioritizes, assigns teams |
-| `rescueTeam` | web: confirms rescue + follows team live · mobile: gets popup, tracks route, records outcome |
+| `rescueTeam` | web: sees **only its own team's** assignments — confirms rescue + follows live (scoped, Oct 28) · mobile: gets popup, tracks route, records outcome |
 | `dmo` | monitors trends, generates reports/stats |
 | `admin` | superuser on the same database — full staff access + staff CRUD (only role that manages accounts) |
 
@@ -191,6 +191,24 @@ Geo/nearby + duplicate detection via a **custom geohash encoder + client-side gr
   `pages/Terms.jsx`; mobile `terms_screen.dart`) linked from both logins, and developer credits
 - [x] Fix `IncidentMap.jsx` render-purity lint warning (range threshold derived outside render)
 
+### P8 — Rescue-team isolation ("Slice 1") (Oct 28) — A/B/C/D
+- [x] **Rules** (`firestore/firestore.rules`): a rescue team can only read/update the **reports + assignments its own team is on** (`myTeamId()` / `onMyTeamReport()` / `onMyTeamAssignment()`); clusters become **staff-only**; teams stay readable by responders
+- [x] **Rules tests** extended with a responder-visibility suite → **67/67 passing** (was 53)
+- [x] **Web** `ResponderPage.jsx`: a rescue team watches **only its assignments**, then loads those reports one-by-one via the new `reportsService.watchReport`; dispatcher/DMO get a **view-only** Responder page; "not on a rescue team yet" empty state
+- [x] **Web nav / routing** (`AppShell.jsx`, `AppRoutes.jsx`): Overview drops `rescueTeam`; `/dashboard` redirects rescue teams to `/responder`; the awaiting-verification badge only loads for dispatcher/admin
+- [x] **Mobile** `rescue_service.dart`: the cross-team "others still working?" check falls back to `reports.backupTeamIds` when rules deny the assignment query
+
+### P9 — Drawer error placement (Oct 29) — B
+- [x] **Drawer errors**: add / edit / enable-disable / delete failures on **Staff** and **Mobile
+  users** now render **inside the drawer** (`drawerError` → `<Alert>` at the top) instead of behind
+  the overlay (which showed them blurred under the drawer). Row-level actions on Staff with no
+  drawer open still use the page alert (`StaffPage.jsx`, `UsersPage.jsx`)
+
+> **Dropped:** an admin "set another account's password" feature (with a Netlify function +
+> Firebase Admin SDK) was prototyped and then **removed** — the web SDK can only change the
+> signed-in user's own password, and Firebase's own backend (Cloud Functions) needs the Blaze plan.
+> Only the drawer-error placement from that work was kept.
+
 ### Nov 2 — SUBMIT
 
 ---
@@ -255,6 +273,8 @@ Geo/nearby + duplicate detection via a **custom geohash encoder + client-side gr
 | 2026-10-26 | maps | **Blue water on every map**: Positron `water`/`waterway` layers tinted `#B9D4EA` / `#9CC0DC` — web (`recolorWater` in `dispatch/mapStyle.js`; called by `ReportMap`, `ResponderMap`, `IncidentMap`) and mobile (`MapStyles.resolveDefaultStyle`, now also used by the report screen). Verified: `flutter analyze`/`oxlint` clean. |
 | 2026-10-26 | analytics | **DMO Analytics v2** (`DmoPage.jsx`): "At a glance" hero stats (Open now / Resolve rate / Rescued of affected), metric groups (Incident load + **priority split** · Response speed · Rescue outcomes), one-breakdown-at-a-time donut/bar (Status / Priority / Type / Area), Records tabs (Recent reports / Rescue operations, expand-to-10). New **hotspot map** `IncidentMap.jsx` — heatmap/pins, own Week/Month/Year/All range + Rescues-only/All-reports scope, top-5 hotspot areas with click-to-zoom. CSV now exports `priority` (was `waitingMinutes`). Lint/build green. |
 | 2026-10-26 | about | **Login + terms**: project description, developer credits (**Group 5 · 3J-G1** · IT 305 · Bulacan State University) and a **Terms of Use & Privacy** page linked from both logins — web `pages/Terms.jsx` (`/terms`) + constants in `web/src/config/appConfig.js`; mobile `terms_screen.dart` + `AppConfig.termsOfUse`. |
+| 2026-10-29 | P9 | **Drawer error placement**: add / edit / enable-disable / delete failures on **Staff** and **Mobile users** now show **inside the drawer** (`drawerError` → `<Alert>` at the top) instead of behind the overlay (the "email already registered" text no longer renders blurred under the drawer); Staff row-level actions with no drawer open keep the page alert. Files: `StaffPage.jsx`, `UsersPage.jsx`. A password-reset feature (Netlify function + Firebase Admin SDK) was prototyped during this work and **removed** — see the note in **§P9**. Lint 0 errors (2 pre-existing warnings). |
+| 2026-10-28 | Slice 1 | **Rescue-team isolation**: a rescue team now sees **only its own assignments + the reports on them** (rules `myTeamId()` / `onMyTeamReport()` / `onMyTeamAssignment()`; clusters staff-only). Web `ResponderPage` scoped per role (dispatcher/DMO **view-only**) + new `reportsService.watchReport`; `AppShell` Overview drops `rescueTeam`; `/dashboard` redirects rescue teams to `/responder`. Mobile finish-rescue cross-team check falls back to `reports.backupTeamIds` when rules deny. Files: `firestore.rules`, `scripts/rules-test/run-tests.js`, `AppShell.jsx`, `reportsService.js`, `ResponderPage.jsx`, `AppRoutes.jsx`, `rescue_service.dart`. **Rules tests 67/67**; `flutter analyze` clean + 110 tests; web build green (lint 0 errors, 1 warning). Deployed `firestore:rules` + hosting. |
 
 ---
 

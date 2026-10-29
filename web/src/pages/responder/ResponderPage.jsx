@@ -19,6 +19,7 @@ import {
   Input,
   Spinner,
 } from "../../components/ui";
+import { ROLES } from "../../config/appConfig";
 import { statusChip } from "../dispatch/constants";
 import ResponderMap from "./ResponderMap";
 
@@ -38,16 +39,27 @@ function formatTime(ts) {
 
 const FILTERS = ["active", "completed", "all"];
 
-function useAssignmentsData() {
+// Rescue team members only get their own team's assignments (and just the
+// reports on those assignments). Dispatchers, admins and DMOs get everything.
+function useAssignmentsData({ isTeamMember, teamId }) {
   const [assignments, setAssignments] = useState([]);
   const [reports, setReports] = useState({});
   const [teams, setTeams] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const noTeam = isTeamMember && !teamId;
+
+  // Assignments
   useEffect(() => {
-    const unsubA = assignmentsService.watchAssignments(
-      {},
+    if (noTeam) {
+      setAssignments([]);
+      setLoading(false);
+      return undefined;
+    }
+    setLoading(true);
+    return assignmentsService.watchAssignments(
+      isTeamMember ? { teamId } : {},
       (snap) => {
         setAssignments(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setLoading(false);
@@ -57,7 +69,29 @@ function useAssignmentsData() {
         setLoading(false);
       },
     );
-    const unsubR = reportsService.watchReports(
+  }, [isTeamMember, teamId, noTeam]);
+
+  // Reports: staff list them all, a rescue team loads only the ones on its assignments.
+  const reportKey = isTeamMember
+    ? [...new Set(assignments.map((a) => a.reportId).filter(Boolean))].sort().join(",")
+    : "";
+
+  useEffect(() => {
+    if (isTeamMember) {
+      const ids = reportKey ? reportKey.split(",") : [];
+      const unsubs = ids.map((id) =>
+        reportsService.watchReport(
+          id,
+          (snap) => {
+            if (!snap.exists()) return;
+            setReports((prev) => ({ ...prev, [id]: { id, ...snap.data() } }));
+          },
+          () => {},
+        ),
+      );
+      return () => unsubs.forEach((unsub) => unsub());
+    }
+    return reportsService.watchReports(
       {},
       (snap) => {
         const map = {};
@@ -68,7 +102,11 @@ function useAssignmentsData() {
       },
       () => {},
     );
-    const unsubT = teamsService.watchTeams(
+  }, [isTeamMember, reportKey]);
+
+  // Teams (names + member list)
+  useEffect(() => {
+    return teamsService.watchTeams(
       (snap) => {
         const map = {};
         snap.docs.forEach((d) => {
@@ -78,19 +116,21 @@ function useAssignmentsData() {
       },
       () => {},
     );
-    return () => {
-      unsubA();
-      unsubR();
-      unsubT();
-    };
   }, []);
 
-  return { assignments, reports, teams, loading, error };
+  return { assignments, reports, teams, loading, error, noTeam };
 }
 
 export default function ResponderPage() {
-  const { user } = useAuth();
-  const { assignments, reports, teams, loading, error } = useAssignmentsData();
+  const { user, profile, role } = useAuth();
+  const isTeamMember = role === ROLES.rescueTeam;
+  // Dispatchers (and DMOs) can follow a rescue here, but only the assigned
+  // rescue team (or an admin) confirms it and updates its progress.
+  const canAct = role !== ROLES.dispatcher && role !== ROLES.dmo;
+  const { assignments, reports, teams, loading, error, noTeam } = useAssignmentsData({
+    isTeamMember,
+    teamId: profile?.teamId ?? null,
+  });
   const [filter, setFilter] = useState("active");
   const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState("");
@@ -267,7 +307,11 @@ export default function ResponderPage() {
   return (
     <AppShell
       title="Responder"
-      subtitle="Review the map, confirm the rescue, and follow the team live."
+      subtitle={
+        canAct
+          ? "Review the map, confirm the rescue, and follow the team live."
+          : "Follow the assigned rescue teams live. View only."
+      }
     >
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <StatCard label="Active" value={counts.active} tone="text-amber-600" icon="clock" />
@@ -303,6 +347,12 @@ export default function ResponderPage() {
         <div className="flex items-center gap-2 py-10 text-slate-500">
           <Spinner /> Loading assignments…
         </div>
+      ) : noTeam ? (
+        <EmptyState
+          icon="responder"
+          title="You're not on a rescue team yet"
+          description="Ask a dispatcher to add you to a team. Rescues assigned to your team will show up here."
+        />
       ) : error ? (
         <Alert tone="danger">
           {error}. Check Firestore rules for your role.
@@ -311,7 +361,11 @@ export default function ResponderPage() {
         <EmptyState
           icon="responder"
           title="No assignments here"
-          description="Dispatchers create assignments from the Dispatch page. They'll show up here for the rescue team."
+          description={
+            isTeamMember
+              ? "Rescues assigned to your team will show up here."
+              : "Dispatchers create assignments from the Dispatch page. They'll show up here for the rescue team."
+          }
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
@@ -397,7 +451,7 @@ export default function ResponderPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    {activeAssignment.status === "dispatched" ? (
+                    {canAct && activeAssignment.status === "dispatched" ? (
                       <>
                         <Button
                           onClick={() => confirmRescue(activeAssignment)}
@@ -420,7 +474,7 @@ export default function ResponderPage() {
                       </>
                     ) : null}
 
-                    {activeAssignment.status === "accepted" ? (
+                    {canAct && activeAssignment.status === "accepted" ? (
                       <>
                         <Button
                           variant="secondary"
@@ -439,7 +493,7 @@ export default function ResponderPage() {
                       </>
                     ) : null}
 
-                    {activeAssignment.status === "in_progress" ? (
+                    {canAct && activeAssignment.status === "in_progress" ? (
                       <Button
                         variant="success"
                         onClick={() => setCompleting(activeAssignment)}

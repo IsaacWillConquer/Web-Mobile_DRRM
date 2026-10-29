@@ -8,6 +8,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { COLLECTIONS, ROLES, STAFF_ROLES } from "../../config/appConfig";
@@ -80,14 +81,41 @@ export async function createStaff({ email, password, name, role }) {
     throw new Error("Could not create the account. Please try again.");
   }
 
+  const displayLabel = name || email;
+
+  // Rescue team accounts also need a teams/{id} doc, otherwise they never show
+  // up in the Dispatch team selector. Write both together so they can't drift.
+  if (role === ROLES.rescueTeam) {
+    const teamRef = doc(collection(db, COLLECTIONS.teams));
+    const batch = writeBatch(db);
+    batch.set(teamRef, {
+      name: displayLabel,
+      contact: "",
+      status: "available",
+      memberUids: [data.localId],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(userDoc(data.localId), {
+      email,
+      name: displayLabel,
+      role,
+      active: true,
+      teamId: teamRef.id,
+      createdAt: serverTimestamp(),
+    });
+    await batch.commit();
+    return { uid: data.localId, email, name: displayLabel, role, teamId: teamRef.id };
+  }
+
   await setDoc(userDoc(data.localId), {
     email,
-    name: name || email,
+    name: displayLabel,
     role,
     active: true,
     createdAt: serverTimestamp(),
   });
-  return { uid: data.localId, email, name: name || email, role };
+  return { uid: data.localId, email, name: displayLabel, role };
 }
 
 function fullName({ firstName, middleName, lastName, suffix }) {

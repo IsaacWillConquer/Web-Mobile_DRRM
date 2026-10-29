@@ -10,12 +10,18 @@ import NotificationBell from "./NotificationBell";
 import ReportAlerts from "./ReportAlerts";
 
 const NAV = [
-  { to: "/dashboard", label: "Overview", icon: "overview", roles: null, section: "Operations" },
+  {
+    to: "/dashboard",
+    label: "Overview",
+    icon: "overview",
+    roles: [ROLES.dispatcher, ROLES.dmo, ROLES.admin],
+    section: "Operations",
+  },
   {
     to: "/dispatch",
     label: "Dispatch",
     icon: "dispatch",
-    roles: [ROLES.dispatcher, ROLES.dmo, ROLES.admin],
+    roles: [ROLES.dispatcher, ROLES.admin],
     section: "Operations",
   },
   {
@@ -79,13 +85,15 @@ export default function AppShell({ title, subtitle, kicker, actions, children, w
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    // Only dispatch-level roles can read every report (rescue teams only see their own).
+    if (role !== ROLES.dispatcher && role !== ROLES.admin) return undefined;
     const unsub = watchReports(
       { status: "Submitted" },
       (snap) => setAttention(snap.size),
       () => {},
     );
     return unsub;
-  }, []);
+  }, [role]);
 
   const items = NAV.filter((item) => !item.roles || (role && item.roles.includes(role)));
 

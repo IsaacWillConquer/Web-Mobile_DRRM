@@ -59,6 +59,7 @@ export default function StaffPage() {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [drawerError, setDrawerError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyUid, setBusyUid] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -92,6 +93,23 @@ export default function StaffPage() {
     syncDispatcherConfig(uids).catch(() => {});
   }, [staff, user]);
 
+  function openCreate() {
+    setDrawerError("");
+    setCreateOpen(true);
+  }
+  function closeCreate() {
+    setDrawerError("");
+    setCreateOpen(false);
+  }
+  function openEdit(member) {
+    setDrawerError("");
+    setEditing(member);
+  }
+  function closeEdit() {
+    setDrawerError("");
+    setEditing(null);
+  }
+
   function updateForm(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -123,7 +141,7 @@ export default function StaffPage() {
 
   async function handleCreate(event) {
     event.preventDefault();
-    setError("");
+    setDrawerError("");
     setNotice("");
     setCreating(true);
     try {
@@ -135,9 +153,9 @@ export default function StaffPage() {
       });
       setNotice(`Created ${created.email} (${roleLabel(created.role)}).`);
       setForm(EMPTY_FORM);
-      setCreateOpen(false);
+      closeCreate();
     } catch (err) {
-      setError(err?.message ?? "Could not create the account.");
+      setDrawerError(err?.message ?? "Could not create the account.");
     } finally {
       setCreating(false);
     }
@@ -145,7 +163,7 @@ export default function StaffPage() {
 
   async function handleSaveEdit(member, data) {
     setBusyUid(member.uid);
-    setError("");
+    setDrawerError("");
     setNotice("");
     try {
       await updateStaff(member.uid, data);
@@ -155,9 +173,9 @@ export default function StaffPage() {
         to: data.role,
       });
       setNotice(`Updated ${displayName(member)}.`);
-      setEditing(null);
+      closeEdit();
     } catch (err) {
-      setError(err?.message ?? "Could not update the account.");
+      setDrawerError(err?.message ?? "Could not update the account.");
     } finally {
       setBusyUid(null);
     }
@@ -204,7 +222,7 @@ export default function StaffPage() {
       title="Staff"
       subtitle="Accounts and access for dispatchers, rescue teams, and disaster officers."
       actions={
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button onClick={openCreate}>
           <Icon name="plus" className="h-4 w-4" />
           Add staff account
         </Button>
@@ -304,7 +322,7 @@ export default function StaffPage() {
                           <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
-                              onClick={() => setEditing(member)}
+                              onClick={() => openEdit(member)}
                               disabled={isBusy}
                               title="Edit"
                               aria-label={`Edit ${displayName(member)}`}
@@ -355,12 +373,12 @@ export default function StaffPage() {
 
       {createOpen ? (
         <SlideOver
-          onClose={() => setCreateOpen(false)}
+          onClose={closeCreate}
           title="Add staff account"
           subtitle="Creates the login and the profile."
           footer={
             <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+              <Button variant="secondary" onClick={closeCreate}>
                 Cancel
               </Button>
               <Button type="submit" form="create-staff" disabled={creating}>
@@ -370,6 +388,11 @@ export default function StaffPage() {
             </div>
           }
         >
+          {drawerError ? (
+            <Alert tone="danger" className="mb-4">
+              {drawerError}
+            </Alert>
+          ) : null}
           <form id="create-staff" className="space-y-4" onSubmit={handleCreate}>
             <Field label="Full name">
               <Input
@@ -415,7 +438,8 @@ export default function StaffPage() {
         <EditStaffDrawer
           member={editing}
           busy={busyUid === editing.uid}
-          onClose={() => setEditing(null)}
+          error={drawerError}
+          onClose={closeEdit}
           onSave={(data) => handleSaveEdit(editing, data)}
         />
       ) : null}
@@ -423,7 +447,7 @@ export default function StaffPage() {
   );
 }
 
-function EditStaffDrawer({ member, busy, onClose, onSave }) {
+function EditStaffDrawer({ member, busy, error, onClose, onSave }) {
   const [name, setName] = useState(member.name ?? "");
   const [role, setRole] = useState(member.role ?? "dispatcher");
 
@@ -449,6 +473,11 @@ function EditStaffDrawer({ member, busy, onClose, onSave }) {
         </div>
       }
     >
+      {error ? (
+        <Alert tone="danger" className="mb-4">
+          {error}
+        </Alert>
+      ) : null}
       <form id="edit-staff" className="space-y-4" onSubmit={submit}>
         <Field label="Full name">
           <Input required value={name} onChange={(e) => setName(e.target.value)} />

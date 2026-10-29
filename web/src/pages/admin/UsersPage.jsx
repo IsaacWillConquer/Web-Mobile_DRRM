@@ -74,6 +74,7 @@ export default function UsersPage() {
   const [residents, setResidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [drawerError, setDrawerError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyUid, setBusyUid] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -97,6 +98,23 @@ export default function UsersPage() {
     );
     return unsubscribe;
   }, []);
+
+  function openCreate() {
+    setDrawerError("");
+    setCreateOpen(true);
+  }
+  function closeCreate() {
+    setDrawerError("");
+    setCreateOpen(false);
+  }
+  function openEdit(member) {
+    setDrawerError("");
+    setEditing(member);
+  }
+  function closeEdit() {
+    setDrawerError("");
+    setEditing(null);
+  }
 
   function updateForm(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -135,7 +153,7 @@ export default function UsersPage() {
 
   async function handleCreate(event) {
     event.preventDefault();
-    setError("");
+    setDrawerError("");
     setNotice("");
     setCreating(true);
     try {
@@ -146,9 +164,9 @@ export default function UsersPage() {
       });
       setNotice(`Created mobile account for ${formatMobile(created.phone)}.`);
       setForm(EMPTY_FORM);
-      setCreateOpen(false);
+      closeCreate();
     } catch (err) {
-      setError(err?.message ?? "Could not create the account.");
+      setDrawerError(err?.message ?? "Could not create the account.");
     } finally {
       setCreating(false);
     }
@@ -156,7 +174,7 @@ export default function UsersPage() {
 
   async function handleToggleActive(member) {
     setBusyUid(member.uid);
-    setError("");
+    setDrawerError("");
     setNotice("");
     try {
       await setResidentActive(member.uid, !member.active);
@@ -165,7 +183,7 @@ export default function UsersPage() {
         active: !member.active,
       });
     } catch (err) {
-      setError(err?.message ?? "Could not update status.");
+      setDrawerError(err?.message ?? "Could not update status.");
     } finally {
       setBusyUid(null);
     }
@@ -174,7 +192,7 @@ export default function UsersPage() {
   async function handleDelete(member) {
     if (!window.confirm(`Remove the profile for ${displayName(member)}?`)) return;
     setBusyUid(member.uid);
-    setError("");
+    setDrawerError("");
     setNotice("");
     try {
       await deleteResident(member.uid);
@@ -182,9 +200,9 @@ export default function UsersPage() {
         targetUid: member.uid,
         phone: member.phone,
       });
-      setEditing(null);
+      closeEdit();
     } catch (err) {
-      setError(err?.message ?? "Could not delete the account.");
+      setDrawerError(err?.message ?? "Could not delete the account.");
     } finally {
       setBusyUid(null);
     }
@@ -192,15 +210,15 @@ export default function UsersPage() {
 
   async function handleSaveEdit(member, data) {
     setBusyUid(member.uid);
-    setError("");
+    setDrawerError("");
     setNotice("");
     try {
       await updateResident(member.uid, data);
       await logAction(user?.uid, "resident_updated", { targetUid: member.uid });
       setNotice(`Updated ${displayName(member)}.`);
-      setEditing(null);
+      closeEdit();
     } catch (err) {
-      setError(err?.message ?? "Could not update the profile.");
+      setDrawerError(err?.message ?? "Could not update the profile.");
     } finally {
       setBusyUid(null);
     }
@@ -215,7 +233,7 @@ export default function UsersPage() {
       title="Mobile users"
       subtitle="Residents who report through the mobile app."
       actions={
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button onClick={openCreate}>
           <Icon name="plus" className="h-4 w-4" />
           Add resident
         </Button>
@@ -279,7 +297,7 @@ export default function UsersPage() {
                     return (
                       <tr
                         key={member.uid}
-                        onClick={() => !isBusy && setEditing(member)}
+                        onClick={() => !isBusy && openEdit(member)}
                         className="cursor-pointer transition-colors hover:bg-slate-50"
                       >
                         <td className="px-5 py-3">
@@ -329,7 +347,8 @@ export default function UsersPage() {
           form={form}
           updateForm={updateForm}
           busy={creating}
-          onClose={() => setCreateOpen(false)}
+          error={drawerError}
+          onClose={closeCreate}
           onSubmit={handleCreate}
         />
       ) : null}
@@ -338,7 +357,8 @@ export default function UsersPage() {
         <EditResidentDrawer
           member={residents.find((r) => r.uid === editing.uid) ?? editing}
           busy={busyUid === editing.uid}
-          onClose={() => setEditing(null)}
+          error={drawerError}
+          onClose={closeEdit}
           onSave={(data) => handleSaveEdit(editing, data)}
           onToggleActive={() => handleToggleActive(editing)}
           onDelete={() => handleDelete(editing)}
@@ -354,7 +374,7 @@ function SectionLabel({ children }) {
   );
 }
 
-function CreateResidentDrawer({ form, updateForm, busy, onClose, onSubmit }) {
+function CreateResidentDrawer({ form, updateForm, busy, error, onClose, onSubmit }) {
   return (
     <SlideOver
       onClose={onClose}
@@ -373,6 +393,11 @@ function CreateResidentDrawer({ form, updateForm, busy, onClose, onSubmit }) {
         </div>
       }
     >
+      {error ? (
+        <Alert tone="danger" className="mb-4">
+          {error}
+        </Alert>
+      ) : null}
       <form id="create-resident" className="space-y-5" onSubmit={onSubmit}>
         <div className="space-y-4">
           <SectionLabel>Sign-in</SectionLabel>
@@ -491,7 +516,7 @@ function addressValue(member, key) {
   return member?.profile?.address?.[key] ?? "";
 }
 
-function EditResidentDrawer({ member, busy, onClose, onSave, onToggleActive, onDelete }) {
+function EditResidentDrawer({ member, busy, error, onClose, onSave, onToggleActive, onDelete }) {
   const [data, setData] = useState({
     firstName: member.firstName ?? "",
     middleName: member.middleName ?? "",
@@ -565,6 +590,11 @@ function EditResidentDrawer({ member, busy, onClose, onSave, onToggleActive, onD
         </div>
       }
     >
+      {error ? (
+        <Alert tone="danger" className="mb-4">
+          {error}
+        </Alert>
+      ) : null}
       <form id="edit-resident" className="space-y-5" onSubmit={submit}>
         <div className="space-y-4">
           <SectionLabel>Profile</SectionLabel>

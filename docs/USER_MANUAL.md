@@ -102,6 +102,12 @@ You triage incoming reports and run assignments.
 The rescue flow uses **two screens**: the responder on the **web** confirms the rescue, and the
 team in the field uses the **mobile app**.
 
+> Rescue-team accounts only ever see **their own team's** assignments (and the reports on those
+> assignments) — never another team's. Dispatchers and DMOs can open **Responder** too, but in a
+> **view-only** mode (they follow the teams live; only the assigned rescue team or an admin can
+> confirm and update progress). A rescue account with no team yet sees *"You're not on a rescue team
+> yet"* until an admin assigns one.
+
 ### 4.1 Responder — web
 1. Open **Responder**. Assignments dispatched to your team are listed on the left as cards.
 2. **Click a card** — the map shows the **pin** where the team will go, plus the description,

@@ -208,15 +208,25 @@ class RescueService {
     if (reportId == null) return;
 
     // Only resolve the report when no other team is still working on it.
-    final snap = await _db
-        .collection('assignments')
-        .where('reportId', isEqualTo: reportId)
-        .get();
-    final othersStillWorking = snap.docs.any((d) {
-      if (d.id == assignmentId) return false;
-      final s = d.data()['status'];
-      return s != 'completed' && s != 'declined' && s != 'cancelled';
-    });
+    bool othersStillWorking;
+    try {
+      final snap = await _db
+          .collection('assignments')
+          .where('reportId', isEqualTo: reportId)
+          .get();
+      othersStillWorking = snap.docs.any((d) {
+        if (d.id == assignmentId) return false;
+        final s = d.data()['status'];
+        return s != 'completed' && s != 'declined' && s != 'cancelled';
+      });
+    } on FirebaseException {
+      // Rules only let a team read its own assignments, so the cross-team check
+      // can be denied. Fall back to the report: if backup teams are on it,
+      // leave it for the dispatcher to resolve.
+      final reportDoc = await _db.collection('reports').doc(reportId).get();
+      final backups = reportDoc.data()?['backupTeamIds'];
+      othersStillWorking = backups is List && backups.isNotEmpty;
+    }
     if (othersStillWorking) return;
 
     await _db.collection('reports').doc(reportId).update({

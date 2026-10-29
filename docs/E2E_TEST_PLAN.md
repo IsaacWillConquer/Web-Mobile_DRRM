@@ -67,6 +67,11 @@ Use **two sessions**: web as `rescue1@drrm.test` (responder), and the mobile app
 same `rescue1@drrm.test` (login screen → **Rescue Team? Sign in with email**). Allow location
 permission on the phone.
 
+> **Slice 1 — team scoping:** a rescue team now sees **only its own team's assignments** (and the
+> reports on them). If `rescue1` isn't on a team the Responder page shows *"You're not on a rescue
+> team yet"* instead of any cards; a dispatcher/DMO opening Responder gets a **view-only** page.
+> `/dashboard` redirects a rescue team straight to `/responder`.
+
 | # | Step | Expected |
 |---|---|---|
 | 3.1 | Web: open **Responder** | Assignment card listed `Dispatched` |
@@ -118,6 +123,8 @@ Log in as `dmo1@drrm.test`.
 | 6.1 | Resident (mobile) tries editing a report's `status` | Denied by rules (permission denied) |
 | 6.2 | Resident creates a notification with `type` ≠ `new_report` or targeting a non-dispatcher | Denied (`validNewReportPing`) |
 | 6.3 | Any staff tries `update`/`delete` on `logs` | Denied (append-only) |
+| 6.4 | Rescue team member of **another** team opens Responder, or reads a report/assignment not on their `teamId` | Denied — their list is empty; direct reads return permission denied (team scoping) |
+| 6.5 | Rescue team member tries to list **every** report/assignment (no `teamId` filter) or read clusters | Denied by rules |
 
 ## 7. Results log
 

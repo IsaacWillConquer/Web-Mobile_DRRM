@@ -251,6 +251,50 @@ async function run() {
     teamB().collection("reportContacts").doc("rAssigned").update({ notes: "x" }),
   ));
 
+  // ---------- Responder visibility: a rescue team only sees its own work ----------
+  await check("assigned rescue team reads its assignment", allow(
+    teamA().collection("assignments").doc("a1").get(),
+  ));
+  await check("unassigned rescue team cannot read the assignment", deny(
+    teamB().collection("assignments").doc("a1").get(),
+  ));
+  await check("assigned rescue team reads its report", allow(
+    teamA().collection("reports").doc("rAssigned").get(),
+  ));
+  await check("unassigned rescue team cannot read the report", deny(
+    teamB().collection("reports").doc("rAssigned").get(),
+  ));
+  await check("rescue team lists only its own assignments", allow(
+    teamA().collection("assignments").where("teamId", "==", "teamA").get(),
+  ));
+  await check("rescue team cannot list another team's assignments", deny(
+    teamA().collection("assignments").where("teamId", "==", "teamB").get(),
+  ));
+  await check("rescue team cannot list every assignment", deny(
+    teamA().collection("assignments").get(),
+  ));
+  await check("rescue team cannot list every report", deny(
+    teamA().collection("reports").get(),
+  ));
+  await check("unassigned rescue team cannot update the assignment", deny(
+    teamB().collection("assignments").doc("a1").update({ status: "declined", updatedBy: "rt2" }),
+  ));
+  await check("unassigned rescue team cannot update the report status", deny(
+    teamB().collection("reports").doc("rAssigned").update({ status: "Resolved" }),
+  ));
+  await check("rescue team cannot reassign its assignment to another team", deny(
+    teamA().collection("assignments").doc("a1").update({ teamId: "teamB" }),
+  ));
+  await check("rescue team cannot read clusters", deny(
+    teamA().collection("clusters").get(),
+  ));
+  await check("dispatcher lists every assignment", allow(
+    dispatcher().collection("assignments").get(),
+  ));
+  await check("dmo lists every report", allow(
+    dmo().collection("reports").get(),
+  ));
+
   // ---------- §8: only staff manage accounts ----------
   await check("admin updates staff role", allow(
     admin().collection("users").doc("rt2").update({ role: "dispatcher" }),

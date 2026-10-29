@@ -1,9 +1,11 @@
 rules_version = '2';
 
 // FinalProject_DRRM — Firestore security rules.
-// Roles: resident < dispatcher < rescueTeam < dmo, with `admin` as superuser.
+// Roles: resident, dispatcher, rescueTeam, dmo, and `admin` as superuser (no hierarchy).
 // Web portal is staff-only (admin/dispatcher/rescueTeam/dmo); residents use mobile.
 // Only `admin` may create/update/delete staff accounts.
+// Rescue teams only see the reports/assignments their own team is assigned to
+// (users/{uid}.teamId). Staff (admin/dispatcher/dmo) see everything.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -40,6 +42,20 @@ service cloud.firestore {
     // Dispatch-level writes: dispatchers plus the superuser admin.
     function canDispatch() {
       return isDispatcher() || isAdmin();
+    }
+    // The signed-in rescue member's team (null when not on a team).
+    function myTeamId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teamId', null);
+    }
+    // True when the member's team is the primary or a backup team on a report.
+    function onMyTeamReport(data) {
+      return myTeamId() != null
+        && (data.get('teamId', null) == myTeamId()
+            || myTeamId() in data.get('backupTeamIds', []));
+    }
+    // True when an assignment belongs to the member's team.
+    function onMyTeamAssignment(data) {
+      return myTeamId() != null && data.get('teamId', null) == myTeamId();
     }
     // PII (§8): a rescue team member may access a report's victim/contact details
     // only once their team (users/{uid}.teamId) is assigned to that report.
@@ -103,10 +119,13 @@ service cloud.firestore {
       allow delete: if isAdmin() && request.auth.uid != uid;
     }
 
-    // Reports: residents create/read their own; responders read all; staff update status/priority.
+    // Reports: residents create/read their own; staff read all; a rescue team reads/updates
+    // only reports its team is assigned to; staff update status/priority.
     match /reports/{id} {
       allow read: if isSignedIn()
-                  && (resource.data.reporterId == request.auth.uid || isResponder());
+                  && (resource.data.reporterId == request.auth.uid
+                      || isStaff()
+                      || (isRescueTeam() && onMyTeamReport(resource.data)));
       allow create: if isSignedIn()
                     && request.resource.data.reporterId == request.auth.uid
                     && request.resource.data.status == 'Submitted'
@@ -117,9 +136,11 @@ service cloud.firestore {
                         && validPriority(request.resource.data.priority))
                     || (resource.data.reporterId == request.auth.uid
                         && !changedKeys().hasAny(['status', 'priority', 'verifiedBy']))
-                    || (isResponder()
+                    || (isRescueTeam()
+                        && onMyTeamReport(resource.data)
                         && validStatus(request.resource.data.status)
-                        && !changedKeys().hasAny(['priority', 'verifiedBy', 'reporterId']));
+                        && !changedKeys().hasAny(['priority', 'verifiedBy', 'reporterId',
+                                                  'teamId', 'backupTeamIds']));
       allow delete: if canDispatch();
     }
 
@@ -137,9 +158,10 @@ service cloud.firestore {
       allow delete: if canDispatch();
     }
 
-    // Clusters / teams / assignments / rescueRecords: responders only.
+    // Clusters: staff only. Teams: responders read, dispatch writes.
+    // Assignments: staff read all; a rescue team reads/updates only its own team's.
     match /clusters/{id} {
-      allow read: if isResponder();
+      allow read: if isStaff();
       allow write: if canDispatch();
     }
     match /teams/{id} {
@@ -147,9 +169,15 @@ service cloud.firestore {
       allow write: if canDispatch();
     }
     match /assignments/{id} {
-      allow read: if isResponder();
+      allow read: if isStaff()
+                  || (isRescueTeam()
+                      && (onMyTeamAssignment(resource.data)
+                          || isAssignedToReport(resource.data.reportId)));
       allow create, delete: if canDispatch();
-      allow update: if canDispatch() || isRescueTeam();
+      allow update: if canDispatch()
+                    || (isRescueTeam()
+                        && onMyTeamAssignment(resource.data)
+                        && !changedKeys().hasAny(['teamId', 'reportId']));
     }
     match /rescueRecords/{id} {
       allow read: if isResponder();

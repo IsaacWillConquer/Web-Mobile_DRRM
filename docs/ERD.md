@@ -174,10 +174,11 @@ signed-in user (mobile needs it to route pings); admin-only writes.
 | Collection | Read | Create | Update | Delete |
 |---|---|---|---|---|
 | `users` | own; staff read all | self (forced `resident`+`active`); admin | self (not role/active); admin (not self) | admin (not self) |
-| `reports` | own; all responders | own, `Submitted`, ≤3 images, valid priority | staff (valid status/priority); owner (not status/priority); responders (status only) | dispatcher/admin |
+| `reports` | own; staff all; rescue team only its assigned reports | own, `Submitted`, ≤3 images, valid priority | staff (valid status/priority); owner (not status/priority); assigned rescue team (status only) | dispatcher/admin |
 | `reportContacts` (PII) | staff; assigned team (primary `teamId` or `backupTeamIds`); own | staff; own | staff; assigned team | dispatcher/admin |
-| `clusters` / `teams` | responders | dispatcher/admin | dispatcher/admin | dispatcher/admin |
-| `assignments` | responders | dispatcher/admin | dispatcher/admin; rescue team | dispatcher/admin |
+| `clusters` | staff | dispatcher/admin | dispatcher/admin | dispatcher/admin |
+| `teams` | responders | dispatcher/admin | dispatcher/admin | dispatcher/admin |
+| `assignments` | staff all; rescue team only its own team's | dispatcher/admin | dispatcher/admin; assigned rescue team (not `teamId`/`reportId`) | dispatcher/admin |
 | `rescueRecords` | responders | rescue team / dispatcher | dispatcher/admin | dispatcher/admin |
 | `notifications` | own | responders; resident fixed ping (own report → dispatcher/admin) | own (`read`) | staff |
 | `config` | any signed-in | admin | admin | admin |
@@ -185,8 +186,9 @@ signed-in user (mobile needs it to route pings); admin-only writes.
 | `bulletins` / `forecasts` | any signed-in | — (Admin SDK only) | — | — |
 | anything else | deny all | deny all | deny all | deny all |
 
-Role hierarchy: `resident < dispatcher < rescueTeam < dmo`, with `admin` as superuser;
-`active:false` disables everything.
+Roles are **flat capabilities** (no hierarchy): `resident`, `dispatcher`, `rescueTeam`, `dmo`, with
+`admin` as superuser; `active:false` disables everything. A **rescue team is scoped to its own work** —
+`users/{uid}.teamId` gates which reports/assignments it can read or update (§2.3, §3).
 
 ## 4. Indexes (`firestore/firestore.indexes.json`)
 - `reports`: `status+createdAt desc`, `reporterId+createdAt desc`
