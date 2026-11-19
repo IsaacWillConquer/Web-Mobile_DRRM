@@ -15,7 +15,7 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBfpcl07v53SEZYUGuUX7e64JOegE56mhw',
+    apiKey: '',
     appId: '1:1010321970173:android:1a9a3627737d085c2abf94',
     messagingSenderId: '1010321970173',
     projectId: 'drrm-app',
